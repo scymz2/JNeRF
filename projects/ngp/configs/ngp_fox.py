@@ -1,39 +1,52 @@
+# 配置 DensityGridSampler的参数
 sampler = dict(
-    type='DensityGridSampler',
-    update_den_freq=16,
+    type='DensityGridSampler', # 采样器类型
+    update_den_freq=16,        # 更新密度网格的频率
 )
+
+# 配置编码器参数
 encoder = dict(
     pos_encoder = dict(
-        type='HashEncoder',
+        type='HashEncoder', # 位置编码器类型为HashEncoder
     ),
     dir_encoder = dict(
-        type='SHEncoder',
+        type='SHEncoder',   # 方向编码器为SHEncoder
     ),
 )
+
+# 配置模型参数
 model = dict(
-    type='NGPNetworks',
-    use_fully=True,
+    type='NGPNetworks', # 模型类型为NGPNetworks
+    use_fully=True,     # 是否使用全连接层
 )
+
+# 配置损失函数参数
 loss = dict(
-    type='HuberLoss',
-    delta=0.1,
+    type='HuberLoss',   # 损失函数类型为 HuberLoss
+    delta=0.1,          # 阈值delta
 )
+
+# 配置优化器参数
 optim = dict(
     type='Adam',
     lr=1e-1,
     eps=1e-15,
     betas=(0.9,0.99),
 )
+
+# 配置 EMA(Exponential Moving Average) 参数
 ema = dict(
-    type='EMA',
-    decay=0.95,
+    type='EMA',         # EMA 类型
+    decay=0.95,         # EMA 的衰减率
 )
+
+# 配置指数衰减参数
 expdecay=dict(
-    type='ExpDecay',
-    decay_start=20_000,
-    decay_interval=10_000,
-    decay_base=0.33,
-    decay_end=None
+    type='ExpDecay',        # 指数衰减类型
+    decay_start=20_000,     # 开始衰减的部署
+    decay_interval=10_000,  # 衰减的间隔步数
+    decay_base=0.33,        # 衰减的基数
+    decay_end=None          # 衰减结束步数（None 表示无限制）
 )
 dataset_type = 'NerfDataset'
 dataset_dir = 'data/fox'

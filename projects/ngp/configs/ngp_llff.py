@@ -36,7 +36,7 @@ expdecay = dict(
     decay_end=None
 )
 dataset_type = 'LLFFDataset'
-dataset_dir = 'data/fern'
+dataset_dir = 'data/pothole'
 dataset = dict(
     train=dict(
         type=dataset_type,
@@ -69,7 +69,7 @@ dataset = dict(
     ),
 )
 
-exp_name = "fern"
+exp_name = "pothole"
 log_dir = "./logs"
 tot_train_steps = 40000
 # Background color, value range from 0 to 1
@@ -86,7 +86,7 @@ target_batch_size = 1 << 18
 # Set const_dt=False for faster convergence
 const_dt = False
 # Use fp16 for faster training
-fp16 = True
+fp16 = False
 # Load pre-trained model
 load_ckpt = False
 # path of checkpoint file, None for default path
