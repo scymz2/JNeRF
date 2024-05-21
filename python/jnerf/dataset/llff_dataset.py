@@ -11,11 +11,27 @@ from math import pi
 from math import tan
 from tqdm import tqdm
 import numpy as np
+
+# check if it is in debug mode
+is_debugging = sys.gettrace() is not None or 'pydevd' in sys.modules
+
 from jnerf.utils.registry import DATASETS
 from jnerf.dataset.dataset_util import *
 from pathlib import Path
+
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../..'))
+sys.path.append(project_root)
+
 from colmapUtils.read_write_model import *
 from colmapUtils.read_write_dense import * 
+
+if is_debugging:
+    print("Debugging mode enabled, skipping module registration")
+else:
+    if 'LLFFDataset' not in DATASETS._modules:
+        @DATASETS.register_module
+        class LLFFDataset():
+            pass
 
 
 @DATASETS.register_module()
