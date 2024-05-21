@@ -12,12 +12,15 @@ from math import tan
 from tqdm import tqdm
 import numpy as np
 from jnerf.utils.registry import DATASETS
-from .dataset_util import *
+from jnerf.dataset.dataset_util import *
+from pathlib import Path
+from colmapUtils.read_write_model import *
+from colmapUtils.read_write_dense import * 
 
 
 @DATASETS.register_module()
 class LLFFDataset():
-    def __init__(self, root_dir, batch_size, mode='train', factor=4, llffhold=0, recenter=True, bd_factor=.75, spherify=False, correct_pose=[1,-1,-1], aabb_scale=None, scale=None, offset=None, img_alpha=True,to_jt=True, have_img=True, preload_shuffle=True):
+    def __init__(self, root_dir, batch_size, mode='train', factor=4, llffhold=0, recenter=True, bd_factor=.75, spherify=False, correct_pose=[1,-1,-1], aabb_scale=None, scale=None, offset=None, img_alpha=True,to_jt=True, have_img=True, preload_shuffle=True, use_depth=False):
         self.root_dir = root_dir
         self.batch_size = batch_size
         self.preload_shuffle = preload_shuffle
@@ -29,25 +32,32 @@ class LLFFDataset():
         self.focal_lengths= []
         self.aabb_scale=aabb_scale
         self.have_img=have_img
-        if self.aabb_scale is None:
+        self.use_depth=use_depth    # if use depth, the dataset will return depth data
+        if self.aabb_scale is None: # Axis Aligned Bounding Box
             print("llff dataset need set aabbscale in config file ,automatically set to 32")
             self.aabb_scale = 32
         self.n_images = 0
-        self.img_alpha=img_alpha
+        self.img_alpha=img_alpha # if image has alpha channel: opacity
         if scale is None:
-            self.scale = NERF_SCALE
+            self.scale = NERF_SCALE # model size
         else:
             self.scale = scale
         if offset is None:
+            # this offset is usually used to adjust the position of the 3D model. For example, 
+            # if the center of your 3D model is not at the origin, you may need to adjust the position of the model by offset to make it at the origin.
+            # in this code snippet, the offset is set to [0.5, 0.5, 0.5], which means the model will be shifted by 0.5 units in each direction.
             self.offset = [0.5, 0.5, 0.5]
-        else:
             self.offset = offset
         self.resolution = [0, 0]
         self.mode = mode
         self.idx_now = 0
         assert isinstance(factor, int)
+        # load depth data
+        if self.use_depth:
+            depth_gts, zero_depth_ids = self.load_colmap_depth(factor=factor, bd_factor=bd_factor)
+
         poses, bds, i_test, imgdirs = self.load_data(
-            factor=factor, recenter=recenter, bd_factor=bd_factor)
+            factor=factor, recenter=recenter, bd_factor=bd_factor, zero_depth = zero_depth_ids)
         n_images = len(imgdirs)
         hwf = poses[0, :3, -1]
         poses = poses[:, :3, :4]
@@ -74,7 +84,6 @@ class LLFFDataset():
             i_select = i_val
         else:
             i_select = i_test
-        
         
  
         self.construct_dataset(poses, i_select, hwf, imgdirs)
@@ -130,11 +139,88 @@ class LLFFDataset():
         if self.img_alpha and self.image_data.shape[-1] == 3:
             self.image_data = jt.concat([self.image_data, jt.ones(
                 self.image_data.shape[:-1]+(1,))], -1).stop_grad()
+        # generate shuffle index
         self.shuffle_index = jt.randperm(self.H*self.W*self.n_images).detach()
-        jt.gc()
+        jt.gc() # garbage collection
 
-    def load_data(self, factor, recenter, bd_factor):
+    def get_poses(self, images):
+        poses = []
+        for i in images:
+            R = images[i].qvec2rotmat() # get rotation matrix from quaternion (`qvec`)
+            t = images[i].tvec.reshape([3,1]) # get translation vector
+            bottom = np.array([0,0,0,1.]).reshape([1,4])
+            w2c = np.concatenate([np.concatenate([R, t], 1), bottom], 0) # get camera-to-world matrix by concatenating rotation matrix and translation vector
+            c2w = np.linalg.inv(w2c) # get world-to-camera matrix by taking the inverse of camera-to-world matrix
+            poses.append(c2w)
+        return np.array(poses)
+
+
+    def load_colmap_depth(self, factor, bd_factor):
+        data_file = Path(self.basedir) / 'colmap_depth.npy'
+    
+        images = read_images_binary(Path(self.basedir) / 'sparse' / '0' / 'images.bin')
+        points = read_points3d_binary(Path(self.basedir) / 'sparse' / '0' / 'points3D.bin')
+
+        # compute mean reprojection error for all 3D points
+        Errs = np.array([point3D.error for point3D in points.values()])
+        Err_mean = np.mean(Errs)
+        print("Mean Projection Error:", Err_mean)
+        
+        # get_poses() is used to directly get camera poses from images.bin file, while _load_data() considers image size and scale factor
+        poses = self.get_poses(images)
+        _, bds_raw, _ = self.load_llff(self.basedir, factor=factor) # factor=8 downsamples original imgs by 8x
+        bds_raw = np.moveaxis(bds_raw, -1, 0).astype(np.float32)
+        # print(bds_raw.shape)
+        # Rescale if bd_factor is provided
+        # adjust near and far according to bd_factor, scale_factor adjusts the depth range
+        sc = 1. if bd_factor is None else 1./(bds_raw.min() * bd_factor)
+        
+        near = np.ndarray.min(bds_raw) * .9 * sc
+        far = np.ndarray.max(bds_raw) * 1. * sc
+        print('near/far:', near, far)
+
+        # initialize data list to store processed depth information
+        data_list = []
+        zero_depth_ids = []
+        for id_im in range(1, len(images)+1):
+            depth_list = []
+            coord_list = []
+            weight_list = []
+            for i in range(len(images[id_im].xys)):
+                # get 2D coordinates according to image id and get corresponding 3D point id
+                point2D = images[id_im].xys[i]
+                id_3D = images[id_im].point3D_ids[i]
+                if id_3D == -1:
+                    continue
+                point3D = points[id_3D].xyz
+                depth = (poses[id_im-1,:3,2].T @ (point3D - poses[id_im-1,:3,3])) * sc
+                # ignore depth values that are not within the near and far range
+                if depth < bds_raw[id_im-1,0] * sc or depth > bds_raw[id_im-1,1] * sc:
+                    continue
+                err = points[id_3D].error
+                # calculate weight: the weight calculation method uses the projection error to adjust the contribution of each 3D point
+                weight = 2 * np.exp(-(err/Err_mean)**2)
+                depth_list.append(depth)
+                coord_list.append(point2D/factor)
+                weight_list.append(weight)
+            if len(depth_list) > 0:
+                print(id_im, len(depth_list), np.min(depth_list), np.max(depth_list), np.mean(depth_list))
+                data_list.append({"depth":np.array(depth_list), "coord":np.array(coord_list), "error":np.array(weight_list)})
+            else:
+                zero_depth_ids.append(id_im - 1)
+                print(id_im, len(depth_list))
+        # json.dump(data_list, open(data_file, "w"))
+        np.save(data_file, data_list)
+        return data_list, zero_depth_ids
+
+
+    def load_data(self, factor, recenter, bd_factor, zero_depth=[]):
         poses, bds, imgdirs = self.load_llff(factor)
+
+        # remove images with zero depth
+        poses = np.delete(poses, zero_depth, axis=-1)
+        bds = np.delete(bds, zero_depth, axis=-1)
+        imgdirs = np.delete(imgdirs, zero_depth, axis=-1)
       
         poses = np.concatenate(
             [poses[:, 1:2, :], -poses[:, 0:1, :], poses[:, 2:, :]], 1)
@@ -155,7 +241,7 @@ class LLFFDataset():
         c2w = self.poses_avg(poses)
         # print('Data:')
         # print(poses.shape, bds.shape)
-
+        # find the pose that is closest to the average pose (c2w) and select as the holdout view
         dists = np.sum(np.square(c2w[:3, 3] - poses[:, :3, 3]), -1)
         i_test = np.argmin(dists)
         print('HOLDOUT view is', i_test)
@@ -276,6 +362,14 @@ class LLFFDataset():
 
 
     def __next__(self):
+        """
+        get next batch data
+        Returns:
+            img_ids: image id
+            rays_o: rays origin
+            rays_d: rays direction
+            rgb_target: target rgb
+        """
         if self.idx_now+self.batch_size >= self.shuffle_index.shape[0]:
             del self.shuffle_index
             self.shuffle_index = jt.randperm(
@@ -374,6 +468,15 @@ class LLFFDataset():
         return rays_o, rays_d
 
     def matrix_nerf2ngp(self, matrix, scale, offset):
+        """
+        convert matrix from nerf to ngp
+        Args:
+            matrix: matrix
+            scale: scale
+            offset: offset
+        Returns:
+            matrix: matrix
+        """
         matrix[:, 0] *= self.correct_pose[0]
         matrix[:, 1] *= self.correct_pose[1]
         matrix[:, 2] *= self.correct_pose[2]
@@ -383,6 +486,15 @@ class LLFFDataset():
         return matrix
 
     def matrix_ngp2nerf(self, matrix, scale, offset):
+        """
+        convert matrix from ngp to nerf
+        Args:
+            matrix: matrix
+            scale: scale
+            offset: offset
+        Returns:
+            matrix: matrix
+        """
         matrix = matrix[[2, 0, 1]]
         matrix[:, 0] *= self.correct_pose[0]
         matrix[:, 1] *= self.correct_pose[1]
