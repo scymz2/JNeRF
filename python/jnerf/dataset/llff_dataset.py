@@ -3,7 +3,7 @@ from logging import root
 import random
 import jittor as jt
 from jittor.dataset import Dataset
-import os
+import os, sys
 import json
 import cv2
 import imageio
@@ -19,19 +19,12 @@ from jnerf.utils.registry import DATASETS
 from jnerf.dataset.dataset_util import *
 from pathlib import Path
 
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../..'))
-sys.path.append(project_root)
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../'))
+if project_root not in sys.path:
+    sys.path.append(project_root)
 
 from colmapUtils.read_write_model import *
 from colmapUtils.read_write_dense import * 
-
-if is_debugging:
-    print("Debugging mode enabled, skipping module registration")
-else:
-    if 'LLFFDataset' not in DATASETS._modules:
-        @DATASETS.register_module
-        class LLFFDataset():
-            pass
 
 
 @DATASETS.register_module()
@@ -63,6 +56,7 @@ class LLFFDataset():
             # if the center of your 3D model is not at the origin, you may need to adjust the position of the model by offset to make it at the origin.
             # in this code snippet, the offset is set to [0.5, 0.5, 0.5], which means the model will be shifted by 0.5 units in each direction.
             self.offset = [0.5, 0.5, 0.5]
+        else:
             self.offset = offset
         self.resolution = [0, 0]
         self.mode = mode
@@ -71,6 +65,8 @@ class LLFFDataset():
         # load depth data
         if self.use_depth:
             depth_gts, zero_depth_ids = self.load_colmap_depth(factor=factor, bd_factor=bd_factor)
+        else:
+            zero_depth_ids = []
 
         poses, bds, i_test, imgdirs = self.load_data(
             factor=factor, recenter=recenter, bd_factor=bd_factor, zero_depth = zero_depth_ids)
