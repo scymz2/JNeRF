@@ -10,7 +10,7 @@
             "request": "launch",
             "program": "${file}",
             "console": "integratedTerminal",
-            "args": ["--config-file", "./projects/ngp/configs/ngp_fox.py"], 
+            "args": ["--config-file", "./projects/ngp/configs/ngp_llff.py"], 
         }
     ]
 }

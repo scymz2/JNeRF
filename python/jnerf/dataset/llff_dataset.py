@@ -113,7 +113,7 @@ class LLFFDataset():
             imgdir = imgdirs[imgid]
             img = read_image(imgdir)
             self.image_data.append(img)
-            self.n_images += 1
+            self.n_images += 1 # number of images
             matrix = np.array(poses[imgid])
             self.transforms_gpu.append(
                 self.matrix_nerf2ngp(matrix, self.scale, self.offset))
@@ -133,9 +133,11 @@ class LLFFDataset():
 
         light_dir = np.array([0, 0, 0])
         metadata[8:] = light_dir
+        # repeat metadata for each image, so it contains the same metadata for each image
         self.metadata = np.expand_dims(
             metadata, 0).repeat(self.n_images, axis=0)
         assert self.aabb_scale is not None
+        # initialize aabb_range (bouding box range)
         aabb_range = (0.5, 0.5)
         self.aabb_range = (
             aabb_range[0]-self.aabb_scale/2, aabb_range[1]+self.aabb_scale/2)
@@ -385,10 +387,12 @@ class LLFFDataset():
         if self.idx_now+self.batch_size >= self.shuffle_index.shape[0]: # check if the next batch is out of range (if current index + batch size >= total number of images)
             del self.shuffle_index
             self.shuffle_index = jt.randperm(
-                self.n_images*self.H*self.W).detach() # generate a new shuffle index
+                self.n_images*self.H*self.W).detach() # generate a new shuffle index from 0 to number of pixels
             jt.gc()
             self.idx_now = 0
+        # get image index for current batch from shuffle index
         img_index = self.shuffle_index[self.idx_now:self.idx_now+self.batch_size]
+        # get random data based on image index batch
         img_ids, rays_o, rays_d, rgb_target = self.generate_random_data(
             img_index, self.batch_size)
         self.idx_now += self.batch_size
@@ -410,8 +414,8 @@ class LLFFDataset():
             rays_d: rays direction
             rgb_tar: target rgb
         """
-        img_id = index//(self.H*self.W)
-        img_offset = index % (self.H*self.W)
+        img_id = index//(self.H*self.W)         # image index
+        img_offset = index % (self.H*self.W)    # pixel offset
         focal_length = self.focal_lengths[img_id]
         xforms = self.transforms_gpu[img_id]
         principal_point = self.metadata[:, 4:6][img_id]
