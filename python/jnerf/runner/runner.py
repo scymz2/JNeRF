@@ -63,6 +63,9 @@ class Runner():
         for i in tqdm(range(self.start, self.tot_train_steps)):
             self.cfg.m_training_step = i
             img_ids, rays_o, rays_d, rgb_target = next(self.dataset["train"])
+            # adding random background color
+            # help to deal with transparent or half-transparent areas
+            # increase the robustness of the model
             training_background_color = jt.random([rgb_target.shape[0],3]).stop_grad()
 
             rgb_target = (rgb_target[..., :3] * rgb_target[..., 3:] + training_background_color * (1 - rgb_target[..., 3:])).detach()

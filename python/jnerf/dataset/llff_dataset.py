@@ -382,10 +382,10 @@ class LLFFDataset():
             rays_d: rays direction
             rgb_target: target rgb
         """
-        if self.idx_now+self.batch_size >= self.shuffle_index.shape[0]:
+        if self.idx_now+self.batch_size >= self.shuffle_index.shape[0]: # check if the next batch is out of range (if current index + batch size >= total number of images)
             del self.shuffle_index
             self.shuffle_index = jt.randperm(
-                self.n_images*self.H*self.W).detach()
+                self.n_images*self.H*self.W).detach() # generate a new shuffle index
             jt.gc()
             self.idx_now = 0
         img_index = self.shuffle_index[self.idx_now:self.idx_now+self.batch_size]
@@ -395,6 +395,21 @@ class LLFFDataset():
         return img_ids, rays_o, rays_d, rgb_target
 
     def generate_random_data(self, index, bs):
+        """
+        generate random data
+        1.generate image id based on index
+        2.calculate rays origin and direction
+        3.get target rgb
+
+        Args:
+            index: index
+            bs: batch size
+        Returns:
+            img_id: image id
+            rays_o: rays origin
+            rays_d: rays direction
+            rgb_tar: target rgb
+        """
         img_id = index//(self.H*self.W)
         img_offset = index % (self.H*self.W)
         focal_length = self.focal_lengths[img_id]
