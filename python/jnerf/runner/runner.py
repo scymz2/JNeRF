@@ -43,6 +43,7 @@ class Runner():
         self.save_path          = os.path.join(self.cfg.log_dir, self.exp_name)
         self.use_depth          = self.cfg.use_depth
         self.depth_rays_prop    = self.cfg.depth_rays_prop
+        self.depth_lambda       = self.cfg.depth_lambda
         if not os.path.exists(self.save_path):
             os.makedirs(self.save_path)
         if self.cfg.ckpt_path and self.cfg.ckpt_path is not None:
@@ -86,8 +87,10 @@ class Runner():
                 n_rgb_rays = int(self.n_rays_per_batch * (1 - self.depth_rays_prop))
                 rgb_loss = self.loss_func(rgb[:n_rgb_rays], rgb_target[:n_rgb_rays])
                 depth = self.sampler.rays2depth(network_outputs[n_rgb_rays:], depth_target, weights)
-                depth_loss = self.loss_func(depth, depth_target)
-                loss = rgb_loss + depth_loss
+                with jt.no_grad():
+                    max_depth = depth_target.max()
+                    depth_loss = jt.mean((((depth - depth_target) / max_depth) ** 2) * weights)
+                loss = rgb_loss + self.depth_lambda * depth_loss
             else:    
                 loss = self.loss_func(rgb, rgb_target)
 
