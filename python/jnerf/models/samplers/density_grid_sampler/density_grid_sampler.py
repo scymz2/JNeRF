@@ -9,6 +9,7 @@ from .mark_untrained_density_grid import mark_untrained_density_grid
 from .compacted_coord import CompactedCoord
 from .ray_sampler import RaySampler
 from .calc_rgb import CalcRgb
+from .calc_depth import CalcDepth
 from jnerf.utils.config import get_cfg
 from jnerf.utils.registry import SAMPLERS
 from jnerf.ops.code_ops.global_vars import global_headers, proj_options
@@ -88,7 +89,7 @@ class DensityGridSampler(nn.Module):
             self.density_grid_bitfield_n_elements, self.n_threads_linear)])
         # self.density_grid_ema_step = 0
         self.density_grid_ema_step = jt.zeros([1], 'int32')
-        self.dataset_ray_data = False  # 数据集是否包含光线信息
+        self.dataset_ray_data = False  
         
         header_path = os.path.join(os.path.dirname(__file__), 'op_header')
         proj_options[f"FLAGS: -I{header_path}"]=1
@@ -130,10 +131,22 @@ class DensityGridSampler(nn.Module):
         self.compacted_coords = CompactedCoord(
             self.density_grad_host_header, self.aabb_range, self.n_rays_per_batch, self.MAX_STEP, self.using_fp16, self.target_batch_size)
         self.calc_rgb = CalcRgb(self.density_grad_host_header, self.aabb_range, self.n_rays_per_batch, self.MAX_STEP, self.padded_output_width, self.background_color, using_fp16=self.using_fp16)
-
+        self.calc_depth = CalcDepth(self.density_grad_host_header, self.aabb_range, self.n_rays_per_batch, self.MAX_STEP, self.padded_output_width, using_fp16=self.using_fp16)
         self.measured_batch_size=jt.zeros([1],'int32')##rays batch sum
 
     def sample(self, img_ids, rays_o, rays_d, rgb_target=None, is_training=False):
+        """
+        sample rays from the dataset
+        Args:
+            img_ids: image ids
+            rays_o: rays origin
+            rays_d: rays direction
+            rgb_target: target rgb
+            is_training: training or not
+        Returns:
+            coords_pos: position of the rays
+            coords_dir: direction of the rays
+        """
         if is_training:
             if self.cfg.m_training_step%self.update_den_freq==0:
                 self.update_density_grid()
@@ -194,6 +207,31 @@ class DensityGridSampler(nn.Module):
                 self.density_grid_mean,
                 self._rays_numsteps_compacted,
                 background_color
+            )
+        
+    def rays2depth(self, network_outputs, inference=False):
+        if self.using_fp16:
+            with jt.flag_scope(auto_mixed_precision_level=5):
+                return self.rays2depth_(network_outputs, inference)
+        else:
+            return self.rays2depth_(network_outputs, inference)
+        
+    def rays2depth_(self, network_outputs, inference=False):
+        assert network_outputs.shape[0]==self._coords.shape[0]
+        if inference:
+            depth = self.calc_depth.inference(
+                network_outputs, 
+                self._coords, 
+                self._rays_numsteps,
+                self.density_grid_mean)
+            return depth
+        else:
+            return self.calc_depth(
+                network_outputs,
+                self._coords,
+                self._rays_numsteps,
+                self.density_grid_mean,
+                self._rays_numsteps_compacted
             )
 
     def enlarge(self, x: jt.Var, size: int):
