@@ -416,6 +416,7 @@ class LLFFDataset():
             self.idx_now = 0
 
         # Calculate the number of rays for depth and RGB based on the proportion
+        print(f"llff_dataset use depth {self.use_depth}")
         if self.use_depth:
             n_depth_rays = int(self.batch_size * self.depth_rays_prop)
             n_rgb_rays = self.batch_size - n_depth_rays
