@@ -73,6 +73,7 @@ exp_name = "pothole"
 log_dir = "./logs"
 use_depth = True
 tot_train_steps = 40000
+depth_rays_prop = 0.5
 # Background color, value range from 0 to 1
 background_color = [0, 0, 0]
 # Hash encoding function used in Instant-NGP
