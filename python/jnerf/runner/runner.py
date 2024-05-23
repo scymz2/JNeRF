@@ -41,6 +41,8 @@ class Runner():
         self.n_rays_per_batch   = self.cfg.n_rays_per_batch
         self.using_fp16         = self.cfg.fp16
         self.save_path          = os.path.join(self.cfg.log_dir, self.exp_name)
+        self.use_depth          = self.cfg.use_depth
+        self.depth_rays_prop    = self.cfg.depth_rays_prop
         if not os.path.exists(self.save_path):
             os.makedirs(self.save_path)
         if self.cfg.ckpt_path and self.cfg.ckpt_path is not None:
@@ -62,19 +64,33 @@ class Runner():
     def train(self):
         for i in tqdm(range(self.start, self.tot_train_steps)):
             self.cfg.m_training_step = i
-            img_ids, rays_o, rays_d, rgb_target = next(self.dataset["train"])
+
+            if self.use_depth:
+                img_ids_rgb, img_ids_depth, rays_o_rgb, rays_d_rgb, rays_o_depth, rays_d_depth, rgb_target, depth_target, weights = next(self.dataset["train"])
+            else:
+                img_ids, rays_o, rays_d, rgb_target = next(self.dataset["train"])
+
             # adding random background color
             # help to deal with transparent or half-transparent areas
             # increase the robustness of the model
             training_background_color = jt.random([rgb_target.shape[0],3]).stop_grad()
 
+            # RGB * alpha + background_color * (1-alpha)
             rgb_target = (rgb_target[..., :3] * rgb_target[..., 3:] + training_background_color * (1 - rgb_target[..., 3:])).detach()
 
-            pos, dir = self.sampler.sample(img_ids, rays_o, rays_d, is_training=True)
+            pos, dir = self.sampler.sample(img_ids, rays_o, rays_d, is_training=True) # pos: [N, 3], dir: [N, 3]
             network_outputs = self.model(pos, dir)
             rgb = self.sampler.rays2rgb(network_outputs, training_background_color)
 
-            loss = self.loss_func(rgb, rgb_target)
+            if self.use_depth:
+                n_rgb_rays = int(self.n_rays_per_batch * (1 - self.depth_rays_prop))
+                rgb_loss = self.loss_func(rgb[:n_rgb_rays], rgb_target[:n_rgb_rays])
+                depth = self.sampler.rays2depth(network_outputs[n_rgb_rays:], depth_target, weights)
+                depth_loss = self.loss_func(depth, depth_target)
+                loss = rgb_loss + depth_loss
+            else:    
+                loss = self.loss_func(rgb, rgb_target)
+
             self.optimizer.step(loss)
             self.ema_optimizer.ema_step()
             if self.using_fp16:
