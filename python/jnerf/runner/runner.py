@@ -67,7 +67,7 @@ class Runner():
             self.cfg.m_training_step = i
 
             if self.use_depth:
-                img_ids_rgb, img_ids_depth, rays_o_rgb, rays_d_rgb, rays_o_depth, rays_d_depth, rgb_target, depth_target, weights = next(self.dataset["train"])
+                img_ids, rays_o, rays_d, rgb_target, depth_target, weights = next(self.dataset["train"])
             else:
                 img_ids, rays_o, rays_d, rgb_target = next(self.dataset["train"])
 
