@@ -29,7 +29,7 @@ from colmapUtils.read_write_dense import *
 
 @DATASETS.register_module()
 class LLFFDataset():
-    def __init__(self, root_dir, batch_size, mode='train', factor=4, llffhold=0, recenter=True, bd_factor=.75, spherify=False, correct_pose=[1,-1,-1], aabb_scale=None, scale=None, offset=None, img_alpha=True,to_jt=True, have_img=True, preload_shuffle=True, use_depth=False):
+    def __init__(self, root_dir, batch_size, mode='train', factor=4, llffhold=0, recenter=True, bd_factor=.75, spherify=False, correct_pose=[1,-1,-1], aabb_scale=None, scale=None, offset=None, img_alpha=True,to_jt=True, have_img=True, preload_shuffle=True, use_depth=False, depth_rays_prop=0.5):
         self.root_dir = root_dir
         self.batch_size = batch_size
         self.preload_shuffle = preload_shuffle
@@ -42,6 +42,7 @@ class LLFFDataset():
         self.aabb_scale=aabb_scale
         self.have_img=have_img
         self.use_depth=use_depth    # if use depth, the dataset will return depth data
+        self.depth_rays_prop=depth_rays_prop
         if self.aabb_scale is None: # Axis Aligned Bounding Box
             print("llff dataset need set aabbscale in config file ,automatically set to 32")
             self.aabb_scale = 32
@@ -119,7 +120,7 @@ class LLFFDataset():
                 self.matrix_nerf2ngp(matrix, self.scale, self.offset))
         self.resolution = [self.W, self.H]
         self.resolution_gpu = jt.array(self.resolution)
-        metadata = np.empty([11], np.float32)
+        metadata = np.empty([11], np.float32) # metadata for each image [0, 0, 0, 0, 0.5, 0.5, f, f, 0, 0, 0]
         metadata[0] = 0
         metadata[1] = 0
         metadata[2] = 0
@@ -375,6 +376,29 @@ class LLFFDataset():
             print('Done')
 
 
+    # def __next__(self):
+    #     """
+    #     get next batch data
+    #     Returns:
+    #         img_ids: image id
+    #         rays_o: rays origin
+    #         rays_d: rays direction
+    #         rgb_target: target rgb
+    #     """
+    #     if self.idx_now+self.batch_size >= self.shuffle_index.shape[0]: # check if the next batch is out of range (if current index + batch size >= total number of images)
+    #         del self.shuffle_index
+    #         self.shuffle_index = jt.randperm(
+    #             self.n_images*self.H*self.W).detach() # generate a new shuffle index from 0 to number of pixels
+    #         jt.gc()
+    #         self.idx_now = 0
+    #     # get image index for current batch from shuffle index
+    #     img_index = self.shuffle_index[self.idx_now:self.idx_now+self.batch_size]
+    #     # get random data based on image index batch
+    #     img_ids, rays_o, rays_d, rgb_target = self.generate_random_data(
+    #         img_index, self.batch_size)
+    #     self.idx_now += self.batch_size
+    #     return img_ids, rays_o, rays_d, rgb_target
+    
     def __next__(self):
         """
         get next batch data
@@ -383,20 +407,46 @@ class LLFFDataset():
             rays_o: rays origin
             rays_d: rays direction
             rgb_target: target rgb
+            depth_target: target depth (if use_depth=True)
         """
-        if self.idx_now+self.batch_size >= self.shuffle_index.shape[0]: # check if the next batch is out of range (if current index + batch size >= total number of images)
+        if self.idx_now + self.batch_size >= self.shuffle_index.shape[0]:  # check if the next batch is out of range
             del self.shuffle_index
-            self.shuffle_index = jt.randperm(
-                self.n_images*self.H*self.W).detach() # generate a new shuffle index from 0 to number of pixels
+            self.shuffle_index = jt.randperm(self.n_images * self.H * self.W).detach()  # generate a new shuffle index
             jt.gc()
             self.idx_now = 0
-        # get image index for current batch from shuffle index
-        img_index = self.shuffle_index[self.idx_now:self.idx_now+self.batch_size]
-        # get random data based on image index batch
-        img_ids, rays_o, rays_d, rgb_target = self.generate_random_data(
-            img_index, self.batch_size)
-        self.idx_now += self.batch_size
-        return img_ids, rays_o, rays_d, rgb_target
+
+        # Calculate the number of rays for depth and RGB based on the proportion
+        if self.use_depth:
+            n_depth_rays = int(self.batch_size * self.depth_rays_prop)
+            n_rgb_rays = self.batch_size - n_depth_rays
+
+            # Get image index for current batch from shuffle index
+            img_index_rgb = self.shuffle_index[self.idx_now:self.idx_now + n_rgb_rays]
+            img_index_depth = self.shuffle_index[self.idx_now + n_rgb_rays:self.idx_now + self.batch_size]
+
+            # Get random data based on image index batch
+            img_ids_rgb, rays_o_rgb, rays_d_rgb, rgb_target = self.generate_random_data(img_index_rgb, n_rgb_rays)
+            img_ids_depth, rays_o_depth, rays_d_depth, depth_target, weights = self.generate_random_data_for_depth(img_index_depth, n_depth_rays)
+
+            # Combine the RGB and depth data
+            img_ids = jt.concat([img_ids_rgb, img_ids_depth], dim=0)
+            rays_o = jt.concat([rays_o_rgb, rays_o_depth], dim=0)
+            rays_d = jt.concat([rays_d_rgb, rays_d_depth], dim=0)
+
+            self.idx_now += self.batch_size
+            return img_ids, rays_o, rays_d, rgb_target, depth_target, weights  # Return both RGB and depth targets
+
+        else:
+            # Get image index for current batch from shuffle index
+            img_index = self.shuffle_index[self.idx_now:self.idx_now + self.batch_size]
+            # Get random data based on image index batch
+            img_ids, rays_o, rays_d, rgb_target = self.generate_random_data(img_index, self.batch_size)
+
+            self.idx_now += self.batch_size
+            return img_ids, rays_o, rays_d, rgb_target
+
+
+
 
     def generate_random_data(self, index, bs):
         """
@@ -431,6 +481,55 @@ class LLFFDataset():
         rays_d = rays_d.squeeze(-1)
         rgb_tar = self.image_data.reshape(-1, 4)[index]
         return img_id, rays_o, rays_d, rgb_tar
+    
+    def generate_random_data_for_depth(self, index, bs):
+        """
+        generate random data depth version
+        1.generate image id based on index
+        2.calculate rays origin and direction
+        3.get target depth
+
+        Args:
+            index: index
+            bs: batch size
+        Returns:
+            img_id: image id
+            rays_o: rays origin
+            rays_d: rays direction
+            depth_tar: target depth
+            weight: weights for each depth value
+        """
+        img_id = index // (self.H * self.W)         # image index
+        img_offset = index % (self.H * self.W)      # pixel offset
+        focal_length = self.focal_lengths[img_id]
+        xforms = self.transforms_gpu[img_id]
+        principal_point = self.metadata[:, 4:6][img_id]
+        xforms = xforms.permute(0, 2, 1)
+        rays_o = xforms[..., 3]
+        res = self.resolution_gpu
+        x = ((img_offset % self.W) + 0.5) / self.W
+        y = ((img_offset // self.W) + 0.5) / self.H
+        xy = jt.stack([x, y], dim=-1)
+        rays_d = jt.concat([(xy - principal_point) * res / focal_length, jt.ones([bs, 1])], dim=-1)
+        rays_d = jt.normalize(xforms[..., :3].matmul(rays_d.unsqueeze(2)))
+        rays_d = rays_d.squeeze(-1)
+        
+        # Load the depth data for the selected image
+        depth_data = self.depth_gts[img_id.item()]
+        coords = depth_data['coord']
+        depths = depth_data['depth']
+        weights = depth_data['error']
+        
+        # Find the nearest depth value for each pixel
+        depth_tar = jt.zeros(bs, dtype=jt.float32)
+        weight = jt.zeros(bs, dtype=jt.float32)
+        for i in range(bs):
+            distances = jt.norm(coords - jt.array([x[i], y[i]]), dim=1)
+            nearest_idx = jt.argmin(distances)
+            depth_tar[i] = depths[nearest_idx]
+            weight[i] = weights[nearest_idx]
+        
+        return img_id, rays_o, rays_d, depth_tar, weight
 
     def generate_rays_total(self, img_id, H, W):
         H = int(H)
