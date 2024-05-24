@@ -65,7 +65,7 @@ class LLFFDataset():
         assert isinstance(factor, int)
         # load depth data
         if self.use_depth:
-            depth_gts, zero_depth_ids = self.load_colmap_depth(factor=factor, bd_factor=bd_factor)
+            self.depth_gts, zero_depth_ids = self.load_colmap_depth(factor=factor, bd_factor=bd_factor)
         else:
             zero_depth_ids = []
 
@@ -171,10 +171,10 @@ class LLFFDataset():
 
 
     def load_colmap_depth(self, factor, bd_factor):
-        data_file = Path(self.basedir) / 'colmap_depth.npy'
+        data_file = Path(self.root_dir) / 'colmap_depth.npy'
     
-        images = read_images_binary(Path(self.basedir) / 'sparse' / '0' / 'images.bin')
-        points = read_points3d_binary(Path(self.basedir) / 'sparse' / '0' / 'points3D.bin')
+        images = read_images_binary(Path(self.root_dir) / 'sparse' / '0' / 'images.bin')
+        points = read_points3d_binary(Path(self.root_dir) / 'sparse' / '0' / 'points3D.bin')
 
         # compute mean reprojection error for all 3D points
         Errs = np.array([point3D.error for point3D in points.values()])
@@ -183,7 +183,7 @@ class LLFFDataset():
         
         # get_poses() is used to directly get camera poses from images.bin file, while _load_data() considers image size and scale factor
         poses = self.get_poses(images)
-        _, bds_raw, _ = self.load_llff(self.basedir, factor=factor) # factor=8 downsamples original imgs by 8x
+        _, bds_raw, _ = self.load_llff(factor=factor) # factor=8 downsamples original imgs by 8x
         bds_raw = np.moveaxis(bds_raw, -1, 0).astype(np.float32)
         # print(bds_raw.shape)
         # Rescale if bd_factor is provided
@@ -516,7 +516,8 @@ class LLFFDataset():
         rays_d = rays_d.squeeze(-1)
         
         # Load the depth data for the selected image
-        depth_data = self.depth_gts[img_id.item()]
+        img_id_np = img_id.numpy()
+        depth_data = self.depth_gts[img_id_np.item()]
         coords = depth_data['coord']
         depths = depth_data['depth']
         weights = depth_data['error']
