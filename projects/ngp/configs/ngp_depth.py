@@ -36,7 +36,7 @@ expdecay = dict(
     decay_end=None
 )
 dataset_type = 'LLFFDataset'
-dataset_dir = 'data/pothole'
+dataset_dir = 'data/pothole_4v'
 dataset = dict(
     train=dict(
         type=dataset_type,
@@ -46,6 +46,8 @@ dataset = dict(
         factor=8,
         llffhold=8,
         aabb_scale=64,
+        use_depth=True,
+        depth_rays_prop=0.5,
     ),
     val=dict(
         type=dataset_type,
@@ -56,6 +58,8 @@ dataset = dict(
         factor=8,
         llffhold=8,
         aabb_scale=64,
+        use_depth=True,
+        depth_rays_prop=0.5,
     ),
     test=dict(
         type=dataset_type,
@@ -66,14 +70,14 @@ dataset = dict(
         factor=8,
         llffhold=8,
         aabb_scale=64,
+        use_depth=True,
+        depth_rays_prop=0.5,
     ),
 )
 
-exp_name = "pothole"
+exp_name = "pothole_4v"
 log_dir = "./logs"
-use_depth = True
 tot_train_steps = 40000
-depth_rays_prop = 0.5
 depth_lambda = 0.1
 # Background color, value range from 0 to 1
 background_color = [0, 0, 0]
