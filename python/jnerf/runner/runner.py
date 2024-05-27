@@ -66,6 +66,9 @@ class Runner():
         for i in tqdm(range(self.start, self.tot_train_steps)):
             self.cfg.m_training_step = i
 
+            print(f"self.use_depth: {self.use_depth}")
+            print(f"self.depth_rays_prop: {self.depth_rays_prop}")
+
             if self.use_depth:
                 img_ids, rays_o, rays_d, rgb_target, depth_target, weights = next(self.dataset["train"])
             else:
@@ -86,7 +89,7 @@ class Runner():
             if self.use_depth:
                 n_rgb_rays = int(self.n_rays_per_batch * (1 - self.depth_rays_prop))
                 rgb_loss = self.loss_func(rgb[:n_rgb_rays], rgb_target[:n_rgb_rays])
-                depth = self.sampler.rays2depth(network_outputs[n_rgb_rays:], depth_target, weights)
+                depth = self.sampler.rays2depth(network_outputs[n_rgb_rays:])
                 with jt.no_grad():
                     max_depth = depth_target.max()
                     depth_loss = jt.mean((((depth - depth_target) / max_depth) ** 2) * weights)
