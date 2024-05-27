@@ -36,7 +36,8 @@ class LLFFDataset():
         scale = None
         offset = None
         self.image_data = []
-        self.transforms_gpu=[]
+        self.transforms_gpu=[] # transformed poses
+        self.depth_gts_mat = []
         self.correct_pose=correct_pose
         self.focal_lengths= []
         self.aabb_scale=aabb_scale
@@ -63,14 +64,9 @@ class LLFFDataset():
         self.mode = mode
         self.idx_now = 0
         assert isinstance(factor, int)
-        # load depth data
-        if self.use_depth:
-            self.depth_gts, zero_depth_ids = self.load_colmap_depth(factor=factor, bd_factor=bd_factor)
-        else:
-            zero_depth_ids = []
 
         poses, bds, i_test, imgdirs = self.load_data(
-            factor=factor, recenter=recenter, bd_factor=bd_factor, zero_depth = zero_depth_ids)
+            factor=factor, recenter=recenter, bd_factor=bd_factor)
         n_images = len(imgdirs)
         hwf = poses[0, :3, -1]
         poses = poses[:, :3, :4]
@@ -97,6 +93,12 @@ class LLFFDataset():
             i_select = i_val
         else:
             i_select = i_test
+
+        # load depth data
+        if self.use_depth:
+            self.depth_gts, self.zero_depth_ids = self.load_colmap_depth(factor=factor, bd_factor=bd_factor, i_select=i_select)
+        else:
+            self.zero_depth_ids = []
         
  
         self.construct_dataset(poses, i_select, hwf, imgdirs)
@@ -170,9 +172,77 @@ class LLFFDataset():
         return np.array(poses)
 
 
-    def load_colmap_depth(self, factor, bd_factor):
-        data_file = Path(self.root_dir) / 'colmap_depth.npy'
+    # def load_colmap_depth(self, factor, bd_factor, i_select):
+    #     data_file = Path(self.root_dir) / 'colmap_depth.npy'
     
+    #     images = read_images_binary(Path(self.root_dir) / 'sparse' / '0' / 'images.bin')
+    #     points = read_points3d_binary(Path(self.root_dir) / 'sparse' / '0' / 'points3D.bin')
+
+    #     # compute mean reprojection error for all 3D points
+    #     Errs = np.array([point3D.error for point3D in points.values()])
+    #     Err_mean = np.mean(Errs)
+    #     print("Mean Projection Error:", Err_mean)
+        
+    #     # get_poses() is used to directly get camera poses from images.bin file, while _load_data() considers image size and scale factor
+    #     poses = self.get_poses(images)
+    #     _, bds_raw, _ = self.load_llff(factor=factor) # factor=8 downsamples original imgs by 8x
+    #     bds_raw = np.moveaxis(bds_raw, -1, 0).astype(np.float32)
+    #     # print(bds_raw.shape)
+    #     # Rescale if bd_factor is provided
+    #     # adjust near and far according to bd_factor, scale_factor adjusts the depth range
+    #     sc = 1. if bd_factor is None else 1./(bds_raw.min() * bd_factor)
+        
+    #     near = np.ndarray.min(bds_raw) * .9 * sc
+    #     far = np.ndarray.max(bds_raw) * 1. * sc
+    #     print('near/far:', near, far)
+
+    #     # initialize data list to store processed depth information
+    #     data_list = []
+    #     zero_depth_ids = []
+    #     for id_im in range(1, len(images)+1):
+    #         depth_list = []
+    #         coord_list = []
+    #         weight_list = []
+    #         for i in range(len(images[id_im].xys)):
+    #             # get 2D coordinates according to image id and get corresponding 3D point id
+    #             point2D = images[id_im].xys[i]
+    #             id_3D = images[id_im].point3D_ids[i]
+    #             if id_3D == -1:
+    #                 continue
+    #             point3D = points[id_3D].xyz
+    #             depth = (poses[id_im-1,:3,2].T @ (point3D - poses[id_im-1,:3,3])) * sc
+    #             # ignore depth values that are not within the near and far range
+    #             if depth < bds_raw[id_im-1,0] * sc or depth > bds_raw[id_im-1,1] * sc:
+    #                 continue
+    #             err = points[id_3D].error
+    #             # calculate weight: the weight calculation method uses the projection error to adjust the contribution of each 3D point
+    #             weight = 2 * np.exp(-(err/Err_mean)**2)
+    #             depth_list.append(depth)
+    #             coord_list.append(point2D/factor)
+    #             weight_list.append(weight)
+    #         # if len(depth_list) == 0:
+    #         #     zero_depth_ids.append(id_im - 1)
+    #         #     print(id_im, len(depth_list))
+                
+    #         # print(id_im, len(depth_list), np.min(depth_list), np.max(depth_list), np.mean(depth_list))
+    #         # data_list.append({"depth":np.array(depth_list), "coord":np.array(coord_list), "error":np.array(weight_list)})
+
+    #         if len(depth_list) > 0:
+    #             print(id_im, len(depth_list), np.min(depth_list), np.max(depth_list), np.mean(depth_list))
+    #             data_list.append({"depth":np.array(depth_list), "coord":np.array(coord_list), "error":np.array(weight_list)})
+    #         else:
+    #             zero_depth_ids.append(id_im - 1)
+    #             print(id_im, len(depth_list))
+
+
+
+    #     # json.dump(data_list, open(data_file, "w"))
+    #     np.save(data_file, data_list)
+    #     return data_list, zero_depth_ids
+
+    def load_colmap_depth(self, factor, bd_factor, i_select):
+        data_file = Path(self.root_dir) / 'colmap_depth.npy'
+
         images = read_images_binary(Path(self.root_dir) / 'sparse' / '0' / 'images.bin')
         points = read_points3d_binary(Path(self.root_dir) / 'sparse' / '0' / 'points3D.bin')
 
@@ -180,16 +250,16 @@ class LLFFDataset():
         Errs = np.array([point3D.error for point3D in points.values()])
         Err_mean = np.mean(Errs)
         print("Mean Projection Error:", Err_mean)
-        
+
         # get_poses() is used to directly get camera poses from images.bin file, while _load_data() considers image size and scale factor
         poses = self.get_poses(images)
-        _, bds_raw, _ = self.load_llff(factor=factor) # factor=8 downsamples original imgs by 8x
+        _, bds_raw, _ = self.load_llff(factor=factor)  # factor=8 downsamples original imgs by 8x
         bds_raw = np.moveaxis(bds_raw, -1, 0).astype(np.float32)
         # print(bds_raw.shape)
         # Rescale if bd_factor is provided
         # adjust near and far according to bd_factor, scale_factor adjusts the depth range
         sc = 1. if bd_factor is None else 1./(bds_raw.min() * bd_factor)
-        
+
         near = np.ndarray.min(bds_raw) * .9 * sc
         far = np.ndarray.max(bds_raw) * 1. * sc
         print('near/far:', near, far)
@@ -197,45 +267,57 @@ class LLFFDataset():
         # initialize data list to store processed depth information
         data_list = []
         zero_depth_ids = []
-        for id_im in range(1, len(images)+1):
+        for id_im in i_select:
             depth_list = []
             coord_list = []
             weight_list = []
-            for i in range(len(images[id_im].xys)):
+            for i in range(len(images[id_im + 1].xys)):
                 # get 2D coordinates according to image id and get corresponding 3D point id
-                point2D = images[id_im].xys[i]
-                id_3D = images[id_im].point3D_ids[i]
+                point2D = images[id_im + 1].xys[i]
+                id_3D = images[id_im + 1].point3D_ids[i]
                 if id_3D == -1:
                     continue
                 point3D = points[id_3D].xyz
-                depth = (poses[id_im-1,:3,2].T @ (point3D - poses[id_im-1,:3,3])) * sc
+                depth = (poses[id_im, :3, 2].T @ (point3D - poses[id_im, :3, 3])) * sc
                 # ignore depth values that are not within the near and far range
-                if depth < bds_raw[id_im-1,0] * sc or depth > bds_raw[id_im-1,1] * sc:
+                if depth < bds_raw[id_im, 0] * sc or depth > bds_raw[id_im, 1] * sc:
                     continue
                 err = points[id_3D].error
                 # calculate weight: the weight calculation method uses the projection error to adjust the contribution of each 3D point
                 weight = 2 * np.exp(-(err/Err_mean)**2)
                 depth_list.append(depth)
-                coord_list.append(point2D/factor)
+                coord_list.append(point2D / factor)
                 weight_list.append(weight)
-            if len(depth_list) > 0:
-                print(id_im, len(depth_list), np.min(depth_list), np.max(depth_list), np.mean(depth_list))
-                data_list.append({"depth":np.array(depth_list), "coord":np.array(coord_list), "error":np.array(weight_list)})
-            else:
-                zero_depth_ids.append(id_im - 1)
+
+            if len(depth_list) == 0:
+                zero_depth_ids.append(id_im)
                 print(id_im, len(depth_list))
+            else:   
+                print(id_im, len(depth_list), np.min(depth_list), np.max(depth_list), np.mean(depth_list))
+
+            data_list.append({"depth": np.array(depth_list), "coord": np.array(coord_list), "error": np.array(weight_list)})
+
+
+            # if len(depth_list) > 0:
+            #     print(id_im, len(depth_list), np.min(depth_list), np.max(depth_list), np.mean(depth_list))
+            #     data_list.append({"depth": np.array(depth_list), "coord": np.array(coord_list), "error": np.array(weight_list)})
+            # else:
+            #     zero_depth_ids.append(id_im)
+            #     print(id_im, len(depth_list))
+
         # json.dump(data_list, open(data_file, "w"))
         np.save(data_file, data_list)
         return data_list, zero_depth_ids
 
 
-    def load_data(self, factor, recenter, bd_factor, zero_depth=[]):
+
+    def load_data(self, factor, recenter, bd_factor):
         poses, bds, imgdirs = self.load_llff(factor)
 
         # remove images with zero depth
-        poses = np.delete(poses, zero_depth, axis=-1)
-        bds = np.delete(bds, zero_depth, axis=-1)
-        imgdirs = np.delete(imgdirs, zero_depth, axis=-1)
+        # poses = np.delete(poses, self.zero_depth_ids, axis=-1)
+        # bds = np.delete(bds, self.zero_depth_ids, axis=-1)
+        # imgdirs = np.delete(imgdirs, self.zero_depth_ids, axis=-1)
       
         poses = np.concatenate(
             [poses[:, 1:2, :], -poses[:, 0:1, :], poses[:, 2:, :]], 1)
@@ -409,6 +491,7 @@ class LLFFDataset():
             rgb_target: target rgb
             depth_target: target depth (if use_depth=True)
         """
+        # check if the next batch is out of range
         if self.idx_now + self.batch_size >= self.shuffle_index.shape[0]:  # check if the next batch is out of range
             del self.shuffle_index
             self.shuffle_index = jt.randperm(self.n_images * self.H * self.W).detach()  # generate a new shuffle index
@@ -418,28 +501,34 @@ class LLFFDataset():
         # Calculate the number of rays for depth and RGB based on the proportion
         print(f"llff_dataset use depth {self.use_depth}")
         if self.use_depth:
+            print(f"batch size: {self.batch_size}")
             n_depth_rays = int(self.batch_size * self.depth_rays_prop)
             n_rgb_rays = self.batch_size - n_depth_rays
 
             # Get image index for current batch from shuffle index
-            img_index_rgb = self.shuffle_index[self.idx_now:self.idx_now + n_rgb_rays]
-            
+            img_index_rgb = self.shuffle_index[self.idx_now:self.idx_now + n_rgb_rays] # [1, 4096]
+
+
             # Get image index for current batch from shuffle index
-            depth_indices = []
             for img_id, depth_data in enumerate(self.depth_gts):
                 for coord, depth, weight in zip(depth_data['coord'], depth_data['depth'], depth_data['error']):
-                    depth_indices.append((img_id, depth, coord.tolist(), weight))
+                    if depth != 0:
+                        self.depth_gts_mat.append((img_id, depth, coord.tolist(), weight))
 
-            depth_indices = np.array(depth_indices, dtype=object)
-            print(f"Depth indices: {depth_indices.shape}")
-            img_ids_depth = jt.array([item[0] for item in depth_indices])
-            depths = jt.array([item[1] for item in depth_indices])
-            coords = jt.array([item[2] for item in depth_indices])
-            weights = jt.array([item[3] for item in depth_indices])
+            self.depth_gts_mat = np.array(self.depth_gts_mat, dtype=object)
+            #print(f"Depth indices: {self.depth_gts_mat.shape}") # [?, 4]
+
+            # Randomly get the depth indices
+            depth_shuffle_index = jt.randperm(len(self.depth_gts_mat)).detach()
+            img_index_depth = depth_shuffle_index[:n_depth_rays]
+            print(f"dpth shuffle index: {img_index_depth.numpy()}")
 
             # Get random data based on image index batch
             img_ids_rgb, rays_o_rgb, rays_d_rgb, rgb_target = self.generate_random_data(img_index_rgb, n_rgb_rays)
-            img_ids_depth, rays_o_depth, rays_d_depth, depth_target, weights = self.generate_random_data_for_depth(img_ids_depth, depths, coords, weights, n_depth_rays)
+            img_ids_depth, rays_o_depth, rays_d_depth, depth_target, weights = self.generate_random_data_for_depth(img_index_depth, n_depth_rays)
+
+            print(f"rays_d_rgb: {rays_d_rgb.numpy().shape}")
+            print(f"rays_d_depth: {rays_d_depth.numpy().shape}")
 
             # Combine the RGB and depth data
             img_ids = jt.concat([img_ids_rgb, img_ids_depth], dim=0)
@@ -481,7 +570,7 @@ class LLFFDataset():
         img_offset = index % (self.H*self.W)    # pixel offset
         focal_length = self.focal_lengths[img_id]
         xforms = self.transforms_gpu[img_id]
-        principal_point = self.metadata[:, 4:6][img_id]
+        principal_point = self.metadata[:, 4:6][img_id] # [[0.5, 0.5], .., [0.5, 0.5]]
         xforms = xforms.permute(0, 2, 1)
         rays_o = xforms[...,  3]
         res = self.resolution_gpu
@@ -490,7 +579,9 @@ class LLFFDataset():
         xy = jt.stack([x, y], dim=-1)
         rays_d = jt.concat([(xy-principal_point) * res /
                            focal_length, jt.ones([bs, 1])], dim=-1)
+        print(f"rays_d: {rays_d.numpy()}")
         rays_d = jt.normalize(xforms[..., :3].matmul(rays_d.unsqueeze(2)))
+        print(f"rays_d: {rays_d.numpy().shape}")
         rays_d = rays_d.squeeze(-1)
         rgb_tar = self.image_data.reshape(-1, 4)[index]
         return img_id, rays_o, rays_d, rgb_tar
@@ -503,7 +594,7 @@ class LLFFDataset():
         rays_d: (4096, 3, 1)
         """
 
-    def generate_random_data_for_depth(self, img_ids, depths, coords, weights, bs):
+    def generate_random_data_for_depth(self, index, bs):
         """
         generate random data depth version
         1.generate image id based on index
@@ -520,52 +611,51 @@ class LLFFDataset():
             depth_tar: target depth
             weight: weights for each depth value
         """
+
+        depth_gts_mat = self.depth_gts_mat[index]
+        print(f"Depth indices: {depth_gts_mat.shape}") # [4096, 4]
+
+        img_ids_depth = jt.array([item[0] for item in depth_gts_mat])
+        depths = jt.array([item[1] for item in depth_gts_mat])
+        coords = jt.array([item[2] for item in depth_gts_mat])
+        weights = jt.array([item[3] for item in depth_gts_mat])
+
+        print(f"img_ids_depth: {img_ids_depth.numpy().shape}")
+        print(f"img_ids_depth: {img_ids_depth.numpy()}")
+
         rays_o = []
         rays_d = []
-        depth_tar = []
-        weight = []
-
         for i in range(bs):
-            img_id = img_ids[i]
+            img_id = img_ids_depth[i]
             coord = coords[i]
-            depth = depths[i]
-            wt = weights[i]
-            
+            # print(f"img_id: {img_id}")
             focal_length = self.focal_lengths[img_id]
             xforms = self.transforms_gpu[img_id]
+            # print(f"xforms: {xforms.numpy()}")
             principal_point = self.metadata[:, 4:6][img_id]
-            xforms = xforms.permute(0, 2, 1)
-            ray_o = xforms[..., 3]
-            res = self.resolution_gpu
-            x, y = coord
-            xy = jt.stack([x, y], dim=-1) # [x, y]
-            print(f"xy: {xy.numpy().shape}")
-            print(f"res: {res.numpy().shape}")
-            print(f"principal_point: {principal_point.numpy().shape}")
-            """
-            xy: (1, 2)
-            res: (2,)
-            principal_point: (1, 2)
-            xf: (1, 3, 3)
-            ray_d: (1, 1, 3)
-            """
+            xforms = xforms.reshape(3, 4)
+            # print(f"xforms: {xforms.numpy().shape}") # [4, 1, 3]
+            ray_o = xforms[:, 3]
+            res = jt.array(self.resolution)
+            xy = jt.stack([(coord[0] + 0.5) / self.W, (coord[1] + 0.5) / self.H], dim=-1)
+            # print(f"xy: {xy.numpy()}")
+            # print(f"meta: {self.metadata[:, 4:6].numpy()}")
+            # print(f"principal_point: {principal_point.numpy()}")
             ray_d = jt.concat([(xy - principal_point) * res / focal_length, jt.ones([1, 1])], dim=-1)
-            print(f"xf: {xforms[...,:3].numpy().shape}")
-            print(f"ray_d: {ray_d.unsqueeze(1).numpy().shape}")
-            ray_d = jt.normalize(xforms[..., :3].matmul(ray_d.unsqueeze(1)))
+            ray_d = jt.normalize(xforms[:, :3].matmul(ray_d.unsqueeze(2)))
             ray_d = ray_d.squeeze(-1)
-            
-            depth_tar.append(depth)
-            weight.append(wt)
+
             rays_o.append(ray_o)
             rays_d.append(ray_d)
-        
+
         rays_o = jt.stack(rays_o)
-        rays_d = jt.stack(rays_d)
-        depth_tar = jt.array(depth_tar, dtype=jt.float32)
-        weight = jt.array(weight, dtype=jt.float32)
-        
-        return img_ids, rays_o, rays_d, depth_tar, weight
+        print(f"rays_o4: {rays_o.numpy().shape}")
+        rays_d = jt.stack(rays_d).squeeze(1)
+        print(f"rays_d4: {rays_d.numpy().shape}")
+
+        return img_ids_depth, rays_o, rays_d, depths, weights
+
+
     
     # def generate_random_data_for_depth(self, img_ids, coords, bs):
     #     """
