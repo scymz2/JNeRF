@@ -491,41 +491,47 @@ class LLFFDataset():
             rgb_target: target rgb
             depth_target: target depth (if use_depth=True)
         """
-        # check if the next batch is out of range
-        if self.idx_now + self.batch_size >= self.shuffle_index.shape[0]:  # check if the next batch is out of range
-            del self.shuffle_index
-            self.shuffle_index = jt.randperm(self.n_images * self.H * self.W).detach()  # generate a new shuffle index
-            jt.gc()
-            self.idx_now = 0
 
         # Calculate the number of rays for depth and RGB based on the proportion
         # print(f"llff_dataset use depth {self.use_depth}")
         if self.use_depth:
-            print(f"batch size: {self.batch_size}")
+            
+            # print(f"batch size: {self.batch_size}")
             n_depth_rays = int(self.batch_size * self.depth_rays_prop)
             n_rgb_rays = self.batch_size - n_depth_rays
+            print(f"self.batch_size: {self.batch_size}")
+            print(f"self.depth_rays_prop: {self.depth_rays_prop}")
+            print(f"n_depth_rays: {n_depth_rays}")
+            print(f"n_rgb_rays: {n_rgb_rays}")
+
+            # check if the next batch is out of range
+            if self.idx_now + n_rgb_rays >= self.shuffle_index.shape[0]:  # check if the next batch is out of range
+                del self.shuffle_index
+                self.shuffle_index = jt.randperm(self.n_images * self.H * self.W).detach()  # generate a new shuffle index
+                jt.gc()
+                self.idx_now = 0
 
             # Get image index for current batch from shuffle index
             img_index_rgb = self.shuffle_index[self.idx_now:self.idx_now + n_rgb_rays] # [1, 4096]
 
-
             # Get image index for current batch from shuffle index
+            self.depth_gts_mat = []
             for img_id, depth_data in enumerate(self.depth_gts):
                 for coord, depth, weight in zip(depth_data['coord'], depth_data['depth'], depth_data['error']):
                     if depth != 0:
                         self.depth_gts_mat.append((img_id, depth, coord.tolist(), weight))
-            print("self.H: ", self.H)
-            print("self.W: ", self.W)
-            print("number of images: ", self.n_images)
-            print(f"length of depth_gts_mat: {len(self.depth_gts_mat)}")            
+            # print("self.H: ", self.H)
+            # print("self.W: ", self.W)
+            # print("number of images: ", self.n_images)
+            # print(f"length of depth_gts_mat: {len(self.depth_gts_mat)}")            
 
             self.depth_gts_mat = np.array(self.depth_gts_mat, dtype=object)
-            #print(f"Depth indices: {self.depth_gts_mat.shape}") # [?, 4]
+            # print(f"Depth indices: {self.depth_gts_mat.shape}") # [?, 4]
 
             # Randomly get the depth indices
             depth_shuffle_index = jt.randperm(len(self.depth_gts_mat)).detach()
             img_index_depth = depth_shuffle_index[:n_depth_rays]
-            print(f"dpth shuffle index: {img_index_depth.numpy()}")
+            # print(f"dpth shuffle index: {img_index_depth.numpy()}")
 
             # Get random data based on image index batch
             img_ids_rgb, rays_o_rgb, rays_d_rgb, rgb_target = self.generate_random_data(img_index_rgb, n_rgb_rays)
@@ -539,10 +545,16 @@ class LLFFDataset():
             rays_o = jt.concat([rays_o_rgb, rays_o_depth], dim=0)
             rays_d = jt.concat([rays_d_rgb, rays_d_depth], dim=0)
 
-            self.idx_now += self.batch_size
+            self.idx_now += n_rgb_rays
             return img_ids, rays_o, rays_d, rgb_target, depth_target, weights  # Return both RGB and depth targets
 
         else:
+            # check if the next batch is out of range
+            if self.idx_now + self.batch_size >= self.shuffle_index.shape[0]:  # check if the next batch is out of range
+                del self.shuffle_index
+                self.shuffle_index = jt.randperm(self.n_images * self.H * self.W).detach()  # generate a new shuffle index
+                jt.gc()
+                self.idx_now = 0
             # Get image index for current batch from shuffle index
             img_index = self.shuffle_index[self.idx_now:self.idx_now + self.batch_size]
             # Get random data based on image index batch
@@ -583,9 +595,7 @@ class LLFFDataset():
         xy = jt.stack([x, y], dim=-1)
         rays_d = jt.concat([(xy-principal_point) * res /
                            focal_length, jt.ones([bs, 1])], dim=-1)
-        print(f"rays_d: {rays_d.numpy()}")
         rays_d = jt.normalize(xforms[..., :3].matmul(rays_d.unsqueeze(2)))
-        print(f"rays_d: {rays_d.numpy().shape}")
         rays_d = rays_d.squeeze(-1)
         rgb_tar = self.image_data.reshape(-1, 4)[index]
         return img_id, rays_o, rays_d, rgb_tar
@@ -617,15 +627,15 @@ class LLFFDataset():
         """
 
         depth_gts_mat = self.depth_gts_mat[index]
-        print(f"Depth indices: {depth_gts_mat.shape}") # [4096, 4]
+        # print(f"Depth indices: {depth_gts_mat.shape}") # [4096, 4]
 
         img_ids_depth = jt.array([item[0] for item in depth_gts_mat])
         depths = jt.array([item[1] for item in depth_gts_mat])
         coords = jt.array([item[2] for item in depth_gts_mat])
         weights = jt.array([item[3] for item in depth_gts_mat])
 
-        print(f"img_ids_depth: {img_ids_depth.numpy().shape}")
-        print(f"img_ids_depth: {img_ids_depth.numpy()}")
+        # print(f"img_ids_depth: {img_ids_depth.numpy().shape}")
+        # print(f"img_ids_depth: {img_ids_depth.numpy()}")
 
         rays_o = []
         rays_d = []
@@ -652,88 +662,10 @@ class LLFFDataset():
             rays_o.append(ray_o)
             rays_d.append(ray_d)
 
-        rays_o = jt.stack(rays_o)
-        print(f"rays_o4: {rays_o.numpy().shape}")
-        rays_d = jt.stack(rays_d).squeeze(1)
-        print(f"rays_d4: {rays_d.numpy().shape}")
+        rays_o = jt.stack(rays_o) # [2048, 3]
+        rays_d = jt.stack(rays_d).squeeze(1) # [2048, 3]
 
         return img_ids_depth, rays_o, rays_d, depths, weights
-
-
-    
-    # def generate_random_data_for_depth(self, img_ids, coords, bs):
-    #     """
-    #     generate random data depth version
-    #     1.generate image id based on index
-    #     2.calculate rays origin and direction
-    #     3.get target depth
-
-    #     Args:
-    #         index: index
-    #         bs: batch size
-    #     Returns:
-    #         img_id: image id
-    #         rays_o: rays origin
-    #         rays_d: rays direction
-    #         depth_tar: target depth
-    #         weight: weights for each depth value
-    #     """
-    #     rays_o_list = []
-    #     rays_d_list = []
-    #     depth_tar_list = []
-    #     weight_list = []
-
-    #     # Check if the depth data is sufficient for the batch size
-    #     if len(img_ids) < bs or len(coords) < bs:
-    #         raise ValueError(f"Not enough depth data for batch size {bs}")
-
-    #     # Randomly sample depth indices
-    #     selected_img_ids = img_ids[np.random.choice(len(img_ids), bs, replace=False)]
-    #     selected_coords = coords[np.random.choice(len(coords), bs, replace=False)]
-    #     print(f"selected_img_ids shape: {len(selected_img_ids)}")
-
-    #     for i in range(bs):
-    #         img_id = img_ids[i]
-    #         coord = coords[i]
-
-    #         # Load the depth data for the selected image
-    #         depth_data = self.depth_gts[img_id.item()]           
-
-    #         focal_length = self.focal_lengths[img_id]
-    #         xforms = self.transforms_gpu[img_id]
-    #         principal_point = self.metadata[:, 4:6][img_id]
-    #         xforms = xforms.permute(0, 2, 1)
-    #         rays_o = xforms[..., 3]
-    #         res = self.resolution_gpu
-    #         x, y = coord
-    #         rays_d = jt.concat([(jt.array([x, y]) - principal_point) * res / focal_length, jt.ones([1, 1])], dim=-1)
-    #         rays_d = jt.normalize(xforms[..., :3].matmul(rays_d.unsqueeze(2)))
-    #         rays_d = rays_d.squeeze(-1)
-
-    #         coords = depth_data['coord']
-    #         depths = depth_data['depth']
-    #         weights = depth_data['error']
-
-    #         # Find the nearest depth value for each pixel
-    #         distances = jt.norm(coords - jt.array([x, y]), dim=1)
-    #         nearest_idx = jt.argmin(distances)
-    #         depth_tar = depths[nearest_idx]
-    #         weight = weights[nearest_idx]
-            
-    #         rays_o_list.append(rays_o)
-    #         rays_d_list.append(rays_d)
-    #         depth_tar_list.append(depth_tar)
-    #         weight_list.append(weight)
-
-    #     rays_o = jt.stack(rays_o_list)
-    #     rays_d = jt.stack(rays_d_list)
-    #     depth_tar = jt.array(depth_tar_list)
-    #     weight = jt.array(weight_list)
-
-    #     return img_ids, rays_o, rays_d, depth_tar, weight
-
-
-
 
     def generate_rays_total(self, img_id, H, W):
         H = int(H)
