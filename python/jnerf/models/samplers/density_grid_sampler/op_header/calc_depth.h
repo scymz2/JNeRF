@@ -70,7 +70,7 @@ __global__ void compute_depths_inference(
 	ENerfActivation density_activation,			// activation of density in output 
 	PitchedPtr<NerfCoordinate> coords_in,		// network input (xyz, dt, dir)
 	uint32_t *__restrict__ numsteps_in,			// rays offset and base counter
-	float *__restrict__ depth_output			// rays depth output
+	float *__restrict__ depth_output,			// rays depth output
 	int NERF_CASCADES,							// num of density grid level
 	float MIN_CONE_STEPSIZE						// lower bound of step size
 	)
