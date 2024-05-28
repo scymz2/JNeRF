@@ -191,6 +191,8 @@ class DensityGridSampler(nn.Module):
             background_color = self.background_color
         else:
             background_color = training_background_color
+        # print(f"netowrk_outputs shape: {network_outputs.shape}")
+        # print(f"coords shape: {self._coords.shape}")
         assert network_outputs.shape[0]==self._coords.shape[0]
         if inference:
             rgb, alpha = self.calc_rgb.inference(
