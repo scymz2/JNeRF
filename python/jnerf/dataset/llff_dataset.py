@@ -499,7 +499,7 @@ class LLFFDataset():
             self.idx_now = 0
 
         # Calculate the number of rays for depth and RGB based on the proportion
-        print(f"llff_dataset use depth {self.use_depth}")
+        # print(f"llff_dataset use depth {self.use_depth}")
         if self.use_depth:
             print(f"batch size: {self.batch_size}")
             n_depth_rays = int(self.batch_size * self.depth_rays_prop)
@@ -514,6 +514,10 @@ class LLFFDataset():
                 for coord, depth, weight in zip(depth_data['coord'], depth_data['depth'], depth_data['error']):
                     if depth != 0:
                         self.depth_gts_mat.append((img_id, depth, coord.tolist(), weight))
+            print("self.H: ", self.H)
+            print("self.W: ", self.W)
+            print("number of images: ", self.n_images)
+            print(f"length of depth_gts_mat: {len(self.depth_gts_mat)}")            
 
             self.depth_gts_mat = np.array(self.depth_gts_mat, dtype=object)
             #print(f"Depth indices: {self.depth_gts_mat.shape}") # [?, 4]
