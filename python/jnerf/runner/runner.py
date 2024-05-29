@@ -62,7 +62,6 @@ class Runner():
         self.image_resolutions = self.dataset["train"].resolution
         self.W = self.image_resolutions[0]
         self.H = self.image_resolutions[1]
-        self.n_rgb_rays = int(self.n_rays_per_batch * (1 - self.depth_rays_prop))
 
     def train(self):
         for i in tqdm(range(self.start, self.tot_train_steps)):
@@ -85,15 +84,16 @@ class Runner():
             rgb_target = (rgb_target[..., :3] * rgb_target[..., 3:] + training_background_color * (1 - rgb_target[..., 3:])).detach()                
 
             if self.use_depth:
-                pos_rgb, dir_rgb = self.sampler.sample(img_ids[:self.n_rgb_rays], rays_o[:self.n_rgb_rays], rays_d[:self.n_rgb_rays], is_training=True)
-                pos_depth, dir_depth = self.sampler_depth.sample(img_ids[self.n_rgb_rays:], rays_o[self.n_rgb_rays:], rays_d[self.n_rgb_rays:], is_training=True)
+                n_rgb_rays = int(len(img_ids) * self.depth_rays_prop)
+                pos_rgb, dir_rgb = self.sampler.sample(img_ids[:n_rgb_rays], rays_o[:n_rgb_rays], rays_d[:n_rgb_rays], is_training=True)
+                pos_depth, dir_depth = self.sampler_depth.sample(img_ids[n_rgb_rays:], rays_o[n_rgb_rays:], rays_d[n_rgb_rays:], is_training=True)
                 pos = jt.concat([pos_rgb, pos_depth], dim=0)
                 dir = jt.concat([dir_rgb, dir_depth], dim=0)
                 network_outputs = self.model(pos, dir)
                 midpoint = network_outputs.shape[0] // 2
                 rgb = self.sampler.rays2rgb(network_outputs[:midpoint], training_background_color)
-                print(f"rgb: {rgb.shape}")
-                print(f"rgb_target: {rgb_target.shape}")
+                # print(f"rgb: {rgb.shape}")
+                # print(f"rgb_target: {rgb_target.shape}")
                 rgb_loss = self.loss_func(rgb, rgb_target)
                 depth = self.sampler_depth.rays2depth(network_outputs[midpoint:])
                 with jt.no_grad():
@@ -104,8 +104,8 @@ class Runner():
                 pos, dir = self.sampler.sample(img_ids, rays_o, rays_d, is_training=True) # pos: [N, 3], dir: [N, 3]
                 network_outputs = self.model(pos, dir)
                 rgb = self.sampler.rays2rgb(network_outputs, training_background_color)
-                print(f"rgb: {rgb.shape}")
-                print(f"rgb_target: {rgb_target.shape}")
+                # print(f"rgb: {rgb.shape}")
+                # print(f"rgb_target: {rgb_target.shape}")
                 loss = self.loss_func(rgb, rgb_target)
 
             self.optimizer.step(loss)
