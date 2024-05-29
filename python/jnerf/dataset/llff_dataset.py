@@ -97,6 +97,19 @@ class LLFFDataset():
         # load depth data
         if self.use_depth:
             self.depth_gts, self.zero_depth_ids = self.load_colmap_depth(factor=factor, bd_factor=bd_factor, i_select=i_select)
+            # Get image index for current batch from shuffle index
+            self.depth_gts_mat = []
+            for img_id, depth_data in enumerate(self.depth_gts):
+                for coord, depth, weight in zip(depth_data['coord'], depth_data['depth'], depth_data['error']):
+                    if depth != 0:
+                        self.depth_gts_mat.append((img_id, depth, coord[0], coord[1], weight))
+            # print("self.H: ", self.H)
+            # print("self.W: ", self.W)
+            # print("number of images: ", self.n_images)
+            # print(f"length of depth_gts_mat: {len(self.depth_gts_mat)}")            
+
+            self.depth_gts_mat = np.array(self.depth_gts_mat, dtype=object)
+            # print(f"Depth indices: {self.depth_gts_mat.shape}") # [?, 4]
         else:
             self.zero_depth_ids = []
         
@@ -514,20 +527,6 @@ class LLFFDataset():
             # Get image index for current batch from shuffle index
             img_index_rgb = self.shuffle_index[self.idx_now:self.idx_now + n_rgb_rays] # [1, 4096]
 
-            # Get image index for current batch from shuffle index
-            self.depth_gts_mat = []
-            for img_id, depth_data in enumerate(self.depth_gts):
-                for coord, depth, weight in zip(depth_data['coord'], depth_data['depth'], depth_data['error']):
-                    if depth != 0:
-                        self.depth_gts_mat.append((img_id, depth, coord.tolist(), weight))
-            # print("self.H: ", self.H)
-            # print("self.W: ", self.W)
-            # print("number of images: ", self.n_images)
-            # print(f"length of depth_gts_mat: {len(self.depth_gts_mat)}")            
-
-            self.depth_gts_mat = np.array(self.depth_gts_mat, dtype=object)
-            # print(f"Depth indices: {self.depth_gts_mat.shape}") # [?, 4]
-
             # Randomly get the depth indices
             depth_shuffle_index = jt.randperm(len(self.depth_gts_mat)).detach()
             img_index_depth = depth_shuffle_index[:n_depth_rays]
@@ -608,6 +607,67 @@ class LLFFDataset():
         rays_d: (4096, 3, 1)
         """
 
+    # def generate_random_data_for_depth(self, index, bs):
+    #     """
+    #     generate random data depth version
+    #     1.generate image id based on index
+    #     2.calculate rays origin and direction
+    #     3.get target depth
+
+    #     Args:
+    #         index: index
+    #         bs: batch size
+    #     Returns:
+    #         img_id: image id
+    #         rays_o: rays origin
+    #         rays_d: rays direction
+    #         depth_tar: target depth
+    #         weight: weights for each depth value
+    #     """
+
+    #     depth_gts_mat = self.depth_gts_mat[index]
+    #     # print(f"Depth indices: {depth_gts_mat.shape}") # [4096, 4]
+
+    #     img_ids_depth = jt.array([item[0] for item in depth_gts_mat])
+    #     depths = jt.array([item[1] for item in depth_gts_mat])
+    #     coords1 = jt.array([item[2] for item in depth_gts_mat])
+    #     coords2 = jt.array([item[3] for item in depth_gts_mat])
+    #     weights = jt.array([item[4] for item in depth_gts_mat])
+
+    #     # print(f"img_ids_depth: {img_ids_depth.numpy().shape}")
+    #     # print(f"img_ids_depth: {img_ids_depth.numpy()}")
+
+    #     rays_o = []
+    #     rays_d = []
+    #     for i in range(bs):
+    #         img_id = img_ids_depth[i]
+    #         coord1 = coords1[i]
+    #         coord2 = coords2[i]
+    #         # print(f"img_id: {img_id}")
+    #         focal_length = self.focal_lengths[img_id]
+    #         xforms = self.transforms_gpu[img_id]
+    #         # print(f"xforms: {xforms.numpy()}")
+    #         principal_point = self.metadata[:, 4:6][img_id]
+    #         xforms = xforms.reshape(3, 4)
+    #         # print(f"xforms: {xforms.numpy().shape}") # [4, 1, 3]
+    #         ray_o = xforms[:, 3]
+    #         res = jt.array(self.resolution)
+    #         xy = jt.stack([(coord1 + 0.5) / self.W, (coord2 + 0.5) / self.H], dim=-1)
+    #         # print(f"xy: {xy.numpy()}")
+    #         # print(f"meta: {self.metadata[:, 4:6].numpy()}")
+    #         # print(f"principal_point: {principal_point.numpy()}")
+    #         ray_d = jt.concat([(xy - principal_point) * res / focal_length, jt.ones([1, 1])], dim=-1)
+    #         ray_d = jt.normalize(xforms[:, :3].matmul(ray_d.unsqueeze(2)))
+    #         ray_d = ray_d.squeeze(-1)
+
+    #         rays_o.append(ray_o)
+    #         rays_d.append(ray_d)
+
+    #     rays_o = jt.stack(rays_o) # [2048, 3]
+    #     rays_d = jt.stack(rays_d).squeeze(1) # [2048, 3]
+
+    #     return img_ids_depth, rays_o, rays_d, depths, weights
+    
     def generate_random_data_for_depth(self, index, bs):
         """
         generate random data depth version
@@ -627,43 +687,27 @@ class LLFFDataset():
         """
 
         depth_gts_mat = self.depth_gts_mat[index]
-        # print(f"Depth indices: {depth_gts_mat.shape}") # [4096, 4]
-
         img_ids_depth = jt.array([item[0] for item in depth_gts_mat])
         depths = jt.array([item[1] for item in depth_gts_mat])
-        coords = jt.array([item[2] for item in depth_gts_mat])
-        weights = jt.array([item[3] for item in depth_gts_mat])
+        coords1 = jt.array([item[2] for item in depth_gts_mat])
+        coords2 = jt.array([item[3] for item in depth_gts_mat])
+        weights = jt.array([item[4] for item in depth_gts_mat])
 
-        # print(f"img_ids_depth: {img_ids_depth.numpy().shape}")
-        # print(f"img_ids_depth: {img_ids_depth.numpy()}")
+        focal_lengths = self.focal_lengths[img_ids_depth]
+        xforms = self.transforms_gpu[img_ids_depth]
+        principal_points = self.metadata[:, 4:6][img_ids_depth]
+        res = jt.array(self.resolution)
 
-        rays_o = []
-        rays_d = []
-        for i in range(bs):
-            img_id = img_ids_depth[i]
-            coord = coords[i]
-            # print(f"img_id: {img_id}")
-            focal_length = self.focal_lengths[img_id]
-            xforms = self.transforms_gpu[img_id]
-            # print(f"xforms: {xforms.numpy()}")
-            principal_point = self.metadata[:, 4:6][img_id]
-            xforms = xforms.reshape(3, 4)
-            # print(f"xforms: {xforms.numpy().shape}") # [4, 1, 3]
-            ray_o = xforms[:, 3]
-            res = jt.array(self.resolution)
-            xy = jt.stack([(coord[0] + 0.5) / self.W, (coord[1] + 0.5) / self.H], dim=-1)
-            # print(f"xy: {xy.numpy()}")
-            # print(f"meta: {self.metadata[:, 4:6].numpy()}")
-            # print(f"principal_point: {principal_point.numpy()}")
-            ray_d = jt.concat([(xy - principal_point) * res / focal_length, jt.ones([1, 1])], dim=-1)
-            ray_d = jt.normalize(xforms[:, :3].matmul(ray_d.unsqueeze(2)))
-            ray_d = ray_d.squeeze(-1)
+        # Create the xy coordinates matrix
+        coords = jt.stack([(coords1 + 0.5) / self.W, (coords2 + 0.5) / self.H], dim=-1)
 
-            rays_o.append(ray_o)
-            rays_d.append(ray_d)
+        # Prepare the rays origin matrix
+        xforms = xforms.permute(0, 2, 1)
+        rays_o = xforms[..., 3]
 
-        rays_o = jt.stack(rays_o) # [2048, 3]
-        rays_d = jt.stack(rays_d).squeeze(1) # [2048, 3]
+        # Compute rays direction
+        rays_d = jt.concat([(coords - principal_points) * res / focal_lengths, jt.ones([bs, 1])], dim=-1)
+        rays_d = jt.normalize(xforms[:, :, :3] @ (rays_d.unsqueeze(2))).squeeze(-1)
 
         return img_ids_depth, rays_o, rays_d, depths, weights
 
