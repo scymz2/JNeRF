@@ -309,4 +309,5 @@ class DensityGridSampler(nn.Module):
         self.n_rays_per_batch=int(min(self.div_round_up(int(rays_per_batch),128)*128,self.target_batch_size))
         jt.init.zero_(self.measured_batch_size)
         self.dataset.batch_size=self.n_rays_per_batch
+        print("self.n_rays_per_batch: ", self.n_rays_per_batch)
 
