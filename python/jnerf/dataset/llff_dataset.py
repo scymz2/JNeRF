@@ -512,10 +512,10 @@ class LLFFDataset():
             # print(f"batch size: {self.batch_size}")
             n_depth_rays = int(self.batch_size * self.depth_rays_prop)
             n_rgb_rays = self.batch_size - n_depth_rays
-            print(f"self.batch_size: {self.batch_size}")
-            print(f"self.depth_rays_prop: {self.depth_rays_prop}")
-            print(f"n_depth_rays: {n_depth_rays}")
-            print(f"n_rgb_rays: {n_rgb_rays}")
+            # print(f"self.batch_size: {self.batch_size}")
+            # print(f"self.depth_rays_prop: {self.depth_rays_prop}")
+            # print(f"n_depth_rays: {n_depth_rays}")
+            # print(f"n_rgb_rays: {n_rgb_rays}")
 
             # check if the next batch is out of range
             if self.idx_now + n_rgb_rays >= self.shuffle_index.shape[0]:  # check if the next batch is out of range
@@ -536,8 +536,8 @@ class LLFFDataset():
             img_ids_rgb, rays_o_rgb, rays_d_rgb, rgb_target = self.generate_random_data(img_index_rgb, n_rgb_rays)
             img_ids_depth, rays_o_depth, rays_d_depth, depth_target, weights = self.generate_random_data_for_depth(img_index_depth, n_depth_rays)
 
-            print(f"rays_d_rgb: {rays_d_rgb.numpy().shape}")
-            print(f"rays_d_depth: {rays_d_depth.numpy().shape}")
+            # print(f"rays_d_rgb: {rays_d_rgb.numpy().shape}")
+            # print(f"rays_d_depth: {rays_d_depth.numpy().shape}")
 
             # Combine the RGB and depth data
             img_ids = jt.concat([img_ids_rgb, img_ids_depth], dim=0)
