@@ -146,7 +146,7 @@ class Runner():
         fps = 28
         W, H = self.image_resolutions
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        videowriter = cv2.VideoWriter(save_path, fourcc, fps, (W, H))
+        videowriter = cv2.VideoWriter(save_path, fourcc, fps, (int(W), int(H)))
         cam_path = camera_path.path_spherical()
         with jt.no_grad():
             for pose in tqdm(cam_path):
