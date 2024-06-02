@@ -25,5 +25,6 @@ def pose_spherical(theta, phi, radius):
     return c2w
 
 def path_spherical(nframe=80):
-    poses = [pose_spherical(angle, -30.0, 4.0) for angle in np.linspace(-180,180,nframe+1)[:-1]]
+    #poses = [pose_spherical(angle, -30.0, 4.0) for angle in np.linspace(-180,180,nframe+1)[:-1]]
+    poses = [pose_spherical(angle, -40.0, 2.0) for angle in np.linspace(-180,180,nframe+1)[:-1]]
     return poses
