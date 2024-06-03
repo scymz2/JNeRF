@@ -423,8 +423,8 @@ class LLFFDataset():
             assert False, "factor need to provided"
 
         if is_stereo:
-            left_imgdir = os.path.join(basedir, 'images', 'left' + sfx)
-            right_imgdir = os.path.join(basedir, 'images', 'right' + sfx)
+            left_imgdir = os.path.join(basedir, 'images' + sfx, 'left')
+            right_imgdir = os.path.join(basedir, 'images' + sfx, 'right')
             if not os.path.exists(left_imgdir) or not os.path.exists(right_imgdir):
                 print(f"Stereo image directories {left_imgdir} or {right_imgdir} do not exist, returning")
                 return
@@ -496,7 +496,6 @@ class LLFFDataset():
         needtoload = False
         basedir = self.root_dir
 
-        # 根据是否为立体模式确定图像文件夹路径
         if is_stereo:
             imgdirs = [os.path.join(basedir, 'images', 'left'), os.path.join(basedir, 'images', 'right')]
         else:
@@ -504,11 +503,11 @@ class LLFFDataset():
 
         for imgdir in imgdirs:
             for r in factors:
-                scaled_imgdir = os.path.join(imgdir, 'images_{}'.format(r))
+                scaled_imgdir = os.path.join(basedir, 'images_{}'.format(r))
                 if not os.path.exists(scaled_imgdir):
                     needtoload = True
             for r in resolutions:
-                scaled_imgdir = os.path.join(imgdir, 'images_{}x{}'.format(r[1], r[0]))
+                scaled_imgdir = os.path.join(basedir, 'images_{}x{}'.format(r[1], r[0]))
                 if not os.path.exists(scaled_imgdir):
                     needtoload = True
 
@@ -517,13 +516,12 @@ class LLFFDataset():
             return
 
         wd = os.getcwd()
-
-        from subprocess import check_output
+        print(f"wd: {wd}")
 
         for imgdir in imgdirs:
             imgs = [os.path.join(imgdir, f) for f in sorted(os.listdir(imgdir))]
             imgs = [f for f in imgs if any([f.endswith(ex) for ex in ['JPG', 'jpg', 'png', 'jpeg', 'PNG']])]
-            imgdir_orig = imgdir
+            print(f'imgdir: {imgdir}')
 
             for r in factors + resolutions:
                 if isinstance(r, int):
@@ -533,23 +531,42 @@ class LLFFDataset():
                     name = 'images_{}x{}'.format(r[1], r[0])
                     resizearg = '{}x{}'.format(r[1], r[0])
 
-                scaled_imgdir = os.path.join(imgdir, name)
-                if os.path.exists(scaled_imgdir):
-                    continue
+                scaled_imgdir = os.path.join(basedir, name)
+                if not os.path.exists(scaled_imgdir):
+                    os.makedirs(scaled_imgdir)
 
-                print("Minifying llff data to {}".format(scaled_imgdir))
-                os.makedirs(scaled_imgdir)
-                check_output('cp {}/* {}'.format(imgdir_orig, scaled_imgdir), shell=True)
+                if is_stereo:
+                    left_scaled_imgdir = os.path.join(basedir, name, 'left')
+                    right_scaled_imgdir = os.path.join(basedir, name, 'right')
+                    if not os.path.exists(left_scaled_imgdir):
+                        os.makedirs(left_scaled_imgdir)
+                    if not os.path.exists(right_scaled_imgdir):
+                        os.makedirs(right_scaled_imgdir)
+
+                if imgdir.endswith('left'):
+                    target_dir = left_scaled_imgdir
+                elif imgdir.endswith('right'):
+                    target_dir = right_scaled_imgdir
+                else:
+                    target_dir = scaled_imgdir
+                from subprocess import check_output
+                print("Minifying llff data to {}".format(target_dir))
+                for img in imgs:
+                    check_output('cp {} {}'.format(img, target_dir), shell=True)
+
                 ext = imgs[0].split('.')[-1]
                 args = ' '.join(['mogrify', '-resize', resizearg, '-format', 'png', '*.{}'.format(ext)])
                 print(args)
-                os.chdir(scaled_imgdir)
+                os.chdir(target_dir)
                 check_output(args, shell=True)
                 os.chdir(wd)
                 if ext != 'png':
-                    check_output('rm {}/*.{}'.format(scaled_imgdir, ext), shell=True)
+                    check_output('rm {}/*.{}'.format(target_dir, ext), shell=True)
                     print('Removed duplicates')
+
                 print('Done')
+
+
 
     # def _minify(self, factors=[], resolutions=[]):
     #     needtoload = True
