@@ -27,7 +27,6 @@ def pose_spherical(theta, phi, radius):
     c2w = c2w[:-1, :] # This matrix removes the last row
     return c2w
 
-def path_spherical(nframe=160):
-    # poses = [pose_spherical(angle, -30.0, 2.0) for angle in np.linspace(-180,180,nframe+1)[:-1]]
-    poses = [pose_spherical(angle, -30.0, 2.0) for angle in np.linspace(-180,180,nframe+1)[:-1]]
+def path_spherical(nframe=80):
+    poses = [pose_spherical(angle, -40.0, 4.0) for angle in np.linspace(-180,180,nframe+1)[:-1]]
     return poses
