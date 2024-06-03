@@ -36,7 +36,7 @@ expdecay = dict(
     decay_end=None
 )
 dataset_type = 'LLFFDataset'
-dataset_dir = 'data/pothole'
+dataset_dir = 'data/RSRD-1'
 dataset = dict(
     train=dict(
         type=dataset_type,
@@ -72,7 +72,7 @@ dataset = dict(
     ),
 )
 
-exp_name = "pothole"
+exp_name = "RSRD-1"
 log_dir = "./logs"
 tot_train_steps = 40000
 # Background color, value range from 0 to 1
