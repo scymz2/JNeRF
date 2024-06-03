@@ -29,7 +29,7 @@ from colmapUtils.read_write_dense import *
 
 @DATASETS.register_module()
 class LLFFDataset():
-    def __init__(self, root_dir, batch_size, mode='train', factor=4, llffhold=0, recenter=True, bd_factor=.75, spherify=False, correct_pose=[1,-1,-1], aabb_scale=None, scale=None, offset=None, img_alpha=True,to_jt=True, have_img=True, preload_shuffle=True, use_depth=False, depth_rays_prop=0.5):
+    def __init__(self, root_dir, batch_size, is_stereo, mode='train', factor=4, llffhold=0, recenter=True, bd_factor=.75, spherify=False, correct_pose=[1,-1,-1], aabb_scale=None, scale=None, offset=None, img_alpha=True,to_jt=True, have_img=True, preload_shuffle=True, use_depth=False, depth_rays_prop=0.5):
         self.root_dir = root_dir
         self.batch_size = batch_size
         self.preload_shuffle = preload_shuffle
@@ -66,7 +66,7 @@ class LLFFDataset():
         assert isinstance(factor, int)
 
         poses, bds, i_test, imgdirs = self.load_data(
-            factor=factor, recenter=recenter, bd_factor=bd_factor)
+            factor=factor, recenter=recenter, bd_factor=bd_factor, is_stereo=is_stereo)
         n_images = len(imgdirs)
         hwf = poses[0, :3, -1]
         poses = poses[:, :3, :4]
@@ -324,8 +324,8 @@ class LLFFDataset():
 
 
 
-    def load_data(self, factor, recenter, bd_factor):
-        poses, bds, imgdirs = self.load_llff(factor)
+    def load_data(self, factor, recenter, bd_factor, is_stereo):
+        poses, bds, imgdirs = self.load_llff(factor, is_stereo)
 
         # remove images with zero depth
         # poses = np.delete(poses, self.zero_depth_ids, axis=-1)
@@ -384,14 +384,35 @@ class LLFFDataset():
         c2w = np.concatenate([viewmatrix(vec2, up, center), hwf], 1)
 
         return c2w
-
-    def load_llff(self, factor=4):
+    
+    def load_llff(self, factor=4, is_stereo=False):
         basedir = self.root_dir
         poses_arr = np.load(os.path.join(self.root_dir, 'poses_bounds.npy'))
         poses = poses_arr[:, :-2].reshape([-1, 3, 5]).transpose([1, 2, 0])
         bds = poses_arr[:, -2:].transpose([1, 0])
-        img0 = [os.path.join(self.root_dir, 'images', f) for f in sorted(os.listdir(os.path.join(self.root_dir, 'images')))
-                if f.endswith('JPG') or f.endswith('jpg') or f.endswith('png')][0]
+        
+        # Determine the image directories based on whether stereo mode is enabled
+        if is_stereo:
+            left_imgdir = os.path.join(self.root_dir, 'images', 'left')
+            right_imgdir = os.path.join(self.root_dir, 'images', 'right')
+            if not os.path.exists(left_imgdir) or not os.path.exists(right_imgdir):
+                print(f"Stereo image directories {left_imgdir} or {right_imgdir} do not exist, returning")
+                return
+            left_img0 = [os.path.join(left_imgdir, f) for f in sorted(os.listdir(left_imgdir))
+                        if f.endswith('JPG') or f.endswith('jpg') or f.endswith('png')][0]
+            right_img0 = [os.path.join(right_imgdir, f) for f in sorted(os.listdir(right_imgdir))
+                        if f.endswith('JPG') or f.endswith('jpg') or f.endswith('png')][0]
+            # Check if left and right images have the same shape
+            if imageio.imread(left_img0).shape != imageio.imread(right_img0).shape:
+                print(f"Left image shape {imageio.imread(left_img0).shape} does not match right image shape {imageio.imread(right_img0).shape}, returning")
+                return
+
+            img0 = left_img0  # Use left image to determine shape
+        else:
+            imgdir = os.path.join(self.root_dir, 'images')
+            img0 = [os.path.join(imgdir, f) for f in sorted(os.listdir(imgdir))
+                    if f.endswith('JPG') or f.endswith('jpg') or f.endswith('png')][0]
+            
         sh = imageio.imread(img0).shape
         sfx = ''
         if factor is not None:
@@ -401,14 +422,26 @@ class LLFFDataset():
             factor = 1
             assert False, "factor need to provided"
 
-        imgdir = os.path.join(basedir, 'images' + sfx)
-        if not os.path.exists(imgdir):
-            print(imgdir, 'does not exist, returning')
-            return
+        if is_stereo:
+            left_imgdir = os.path.join(basedir, 'images', 'left' + sfx)
+            right_imgdir = os.path.join(basedir, 'images', 'right' + sfx)
+            if not os.path.exists(left_imgdir) or not os.path.exists(right_imgdir):
+                print(f"Stereo image directories {left_imgdir} or {right_imgdir} do not exist, returning")
+                return
 
-        imgfiles = [os.path.join(imgdir, f) for f in sorted(os.listdir(
-            imgdir)) if f.endswith('JPG') or f.endswith('jpg') or f.endswith('png')]
-        
+            left_imgfiles = [os.path.join(left_imgdir, f) for f in sorted(os.listdir(left_imgdir))
+                            if f.endswith('JPG') or f.endswith('jpg') or f.endswith('png')]
+            right_imgfiles = [os.path.join(right_imgdir, f) for f in sorted(os.listdir(right_imgdir))
+                            if f.endswith('JPG') or f.endswith('jpg') or f.endswith('png')]
+            imgfiles = left_imgfiles + right_imgfiles
+        else:
+            imgdir = os.path.join(basedir, 'images' + sfx)
+            if not os.path.exists(imgdir):
+                print(imgdir, 'does not exist, returning')
+                return
+            imgfiles = [os.path.join(imgdir, f) for f in sorted(os.listdir(imgdir))
+                        if f.endswith('JPG') or f.endswith('jpg') or f.endswith('png')]
+            
         if poses.shape[-1] != len(imgfiles):
             print('Mismatch between imgs {} and poses {} !!!!'.format(
                 len(imgfiles), poses.shape[-1]))
@@ -418,9 +451,46 @@ class LLFFDataset():
         poses[:2, 4, :] = np.array(sh[:2]).reshape([2, 1])
         poses[2, 4, :] = poses[2, 4, :] * 1./factor
 
-        # imgs = [imageio.imread(img) for img in imgfiles]
-        # imgs = np.stack(imgs, -1)
-        return poses, bds, imgfiles
+    # imgs = [imageio.imread(img) for img in imgfiles]
+    # imgs = np.stack(imgs, -1)
+    return poses, bds, imgfiles
+
+    # def load_llff(self, factor=4, is_stereo=False):
+    #     basedir = self.root_dir
+    #     poses_arr = np.load(os.path.join(self.root_dir, 'poses_bounds.npy'))
+    #     poses = poses_arr[:, :-2].reshape([-1, 3, 5]).transpose([1, 2, 0])
+    #     bds = poses_arr[:, -2:].transpose([1, 0])
+    #     img0 = [os.path.join(self.root_dir, 'images', f) for f in sorted(os.listdir(os.path.join(self.root_dir, 'images')))
+    #             if f.endswith('JPG') or f.endswith('jpg') or f.endswith('png')][0]
+    #     sh = imageio.imread(img0).shape
+    #     sfx = ''
+    #     if factor is not None:
+    #         sfx = '_{}'.format(factor)
+    #         self._minify(factors=[factor])
+    #     else:
+    #         factor = 1
+    #         assert False, "factor need to provided"
+
+    #     imgdir = os.path.join(basedir, 'images' + sfx)
+    #     if not os.path.exists(imgdir):
+    #         print(imgdir, 'does not exist, returning')
+    #         return
+
+    #     imgfiles = [os.path.join(imgdir, f) for f in sorted(os.listdir(
+    #         imgdir)) if f.endswith('JPG') or f.endswith('jpg') or f.endswith('png')]
+        
+    #     if poses.shape[-1] != len(imgfiles):
+    #         print('Mismatch between imgs {} and poses {} !!!!'.format(
+    #             len(imgfiles), poses.shape[-1]))
+    #         return
+
+    #     sh = imageio.imread(imgfiles[0]).shape
+    #     poses[:2, 4, :] = np.array(sh[:2]).reshape([2, 1])
+    #     poses[2, 4, :] = poses[2, 4, :] * 1./factor
+
+    #     # imgs = [imageio.imread(img) for img in imgfiles]
+    #     # imgs = np.stack(imgs, -1)
+    #     return poses, bds, imgfiles
 
     def _minify(self, factors=[], resolutions=[]):
         needtoload = True
