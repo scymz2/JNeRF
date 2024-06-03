@@ -451,9 +451,9 @@ class LLFFDataset():
         poses[:2, 4, :] = np.array(sh[:2]).reshape([2, 1])
         poses[2, 4, :] = poses[2, 4, :] * 1./factor
 
-    # imgs = [imageio.imread(img) for img in imgfiles]
-    # imgs = np.stack(imgs, -1)
-    return poses, bds, imgfiles
+        # imgs = [imageio.imread(img) for img in imgfiles]
+        # imgs = np.stack(imgs, -1)
+        return poses, bds, imgfiles
 
     # def load_llff(self, factor=4, is_stereo=False):
     #     basedir = self.root_dir
