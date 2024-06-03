@@ -518,6 +518,8 @@ class LLFFDataset():
 
         wd = os.getcwd()
 
+        from subprocess import check_output
+
         for imgdir in imgdirs:
             imgs = [os.path.join(imgdir, f) for f in sorted(os.listdir(imgdir))]
             imgs = [f for f in imgs if any([f.endswith(ex) for ex in ['JPG', 'jpg', 'png', 'jpeg', 'PNG']])]
