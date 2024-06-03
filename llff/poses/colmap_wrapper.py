@@ -20,18 +20,29 @@ import subprocess
 #     --output_path $DATASET_PATH/sparse
 
 # $ mkdir $DATASET_PATH/dense
-def run_colmap(basedir, match_type):
+def run_colmap(basedir, is_stereo, match_type):
     
     logfile_name = os.path.join(basedir, 'colmap_output.txt')
     logfile = open(logfile_name, 'w')
-    
-    feature_extractor_args = [
-        'colmap', 'feature_extractor', 
-            '--database_path', os.path.join(basedir, 'database.db'), 
-            '--image_path', os.path.join(basedir, 'images'),
-            '--ImageReader.single_camera', '1',
-            '--SiftExtraction.use_gpu', '0',
-    ]
+
+    if is_stereo:
+        # if stereo, use single_camera_per_folder
+        feature_extractor_args = [
+            'colmap', 'feature_extractor',
+                '--database_path', os.path.join(basedir, 'database.db'),
+                '--image_path', os.path.join(basedir, 'images'),
+                '--ImageReader.single_camera_per_folder', '1',
+                '--SiftExtraction.use_gpu', '0',
+        ]
+    else:
+        feature_extractor_args = [
+            'colmap', 'feature_extractor', 
+                '--database_path', os.path.join(basedir, 'database.db'), 
+                '--image_path', os.path.join(basedir, 'images'),
+                '--ImageReader.single_camera', '1',
+                '--SiftExtraction.use_gpu', '0',
+        ]
+
     feat_output = ( subprocess.check_output(feature_extractor_args, universal_newlines=True) )
     logfile.write(feat_output)
     print('Features extracted')
