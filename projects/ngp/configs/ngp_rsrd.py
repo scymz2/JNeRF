@@ -36,7 +36,7 @@ expdecay = dict(
     decay_end=None
 )
 dataset_type = 'LLFFDataset'
-dataset_dir = 'data/RSRD'
+dataset_dir = 'data/RSRD-1'
 dataset = dict(
     train=dict(
         type=dataset_type,
