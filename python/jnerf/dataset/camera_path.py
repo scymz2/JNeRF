@@ -30,3 +30,13 @@ def pose_spherical(theta, phi, radius):
 def path_spherical(nframe=160):
     poses = [pose_spherical(angle, -30.0, 4.0) for angle in np.linspace(-180,180,nframe+1)[:-1]]
     return poses
+
+def path_driving(poses_path, insert_frames=28):
+    ori_poses = np.load(poses_path) # [N, 3, 5]
+    poses = []
+    for i in range(len(ori_poses)-1):
+        poses.append(ori_poses[i])
+        for j in range(insert_frames):
+            pose = ori_poses[i] * (1-j/nframe) + ori_poses[i+1] * (j/nframe)
+            poses.append(pose)
+    return poses
