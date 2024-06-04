@@ -46,7 +46,7 @@ dataset = dict(
         mode='train',
         factor=8,
         llffhold=8,
-        aabb_scale=64,
+        aabb_scale=32,
     ),
     val=dict(
         type=dataset_type,
@@ -57,7 +57,7 @@ dataset = dict(
         preload_shuffle=False,
         factor=8,
         llffhold=8,
-        aabb_scale=64,
+        aabb_scale=32,
     ),
     test=dict(
         type=dataset_type,
@@ -68,7 +68,7 @@ dataset = dict(
         preload_shuffle=False,
         factor=8,
         llffhold=8,
-        aabb_scale=64,
+        aabb_scale=32,
     ),
 )
 
