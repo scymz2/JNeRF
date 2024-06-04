@@ -36,6 +36,7 @@ def path_driving(poses_path, insert_frames=4):
     ori_poses = jt.array(ori_poses[:, :, :-1])
     poses = []
     for i in range(len(ori_poses)-1):
+        poses.append(ori_poses[i])
         for j in range(insert_frames):
             pose = ori_poses[i] * (1-j/insert_frames) + ori_poses[i+1] * (j/insert_frames)
             poses.append(pose)
