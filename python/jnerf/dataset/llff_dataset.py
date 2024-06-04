@@ -44,6 +44,7 @@ class LLFFDataset():
         self.have_img=have_img
         self.use_depth=use_depth    # if use depth, the dataset will return depth data
         self.depth_rays_prop=depth_rays_prop
+        self.is_stereo = is_stereo
         if self.aabb_scale is None: # Axis Aligned Bounding Box
             print("llff dataset need set aabbscale in config file ,automatically set to 32")
             self.aabb_scale = 32
@@ -66,7 +67,7 @@ class LLFFDataset():
         assert isinstance(factor, int)
 
         poses, bds, i_test, imgdirs = self.load_data(
-            factor=factor, recenter=recenter, bd_factor=bd_factor, is_stereo=is_stereo)
+            factor=factor, recenter=recenter, bd_factor=bd_factor)
         n_images = len(imgdirs)
         hwf = poses[0, :3, -1]
         poses = poses[:, :3, :4]
@@ -324,8 +325,8 @@ class LLFFDataset():
 
 
 
-    def load_data(self, factor, recenter, bd_factor, is_stereo):
-        poses, bds, imgdirs = self.load_llff(factor, is_stereo)
+    def load_data(self, factor, recenter, bd_factor):
+        poses, bds, imgdirs = self.load_llff(factor)
 
         # remove images with zero depth
         # poses = np.delete(poses, self.zero_depth_ids, axis=-1)
@@ -387,7 +388,7 @@ class LLFFDataset():
 
         return c2w
     
-    def load_llff(self, factor=4, is_stereo=False):
+    def load_llff(self, factor=4):
         basedir = self.root_dir
         poses_arr = np.load(os.path.join(self.root_dir, 'poses_bounds.npy')) # N x 17
         # remove the last two columns of poses_arr and reshape
@@ -396,7 +397,7 @@ class LLFFDataset():
         bds = poses_arr[:, -2:].transpose([1, 0]) # 2 x N
         
         # Determine the image directories based on whether stereo mode is enabled
-        if is_stereo:
+        if self.is_stereo:
             left_imgdir = os.path.join(self.root_dir, 'images', 'left')
             right_imgdir = os.path.join(self.root_dir, 'images', 'right')
             if not os.path.exists(left_imgdir) or not os.path.exists(right_imgdir):
@@ -421,12 +422,12 @@ class LLFFDataset():
         sfx = ''
         if factor is not None:
             sfx = '_{}'.format(factor)
-            self._minify(factors=[factor], is_stereo=is_stereo)
+            self._minify(factors=[factor])
         else:
             factor = 1
             assert False, "factor need to provided"
 
-        if is_stereo:
+        if self.is_stereo:
             left_imgdir = os.path.join(basedir, 'images' + sfx, 'left')
             right_imgdir = os.path.join(basedir, 'images' + sfx, 'right')
             if not os.path.exists(left_imgdir) or not os.path.exists(right_imgdir):
@@ -496,11 +497,11 @@ class LLFFDataset():
     #     # imgs = np.stack(imgs, -1)
     #     return poses, bds, imgfiles
 
-    def _minify(self, factors=[], resolutions=[], is_stereo=False):
+    def _minify(self, factors=[], resolutions=[]):
         needtoload = False
         basedir = self.root_dir
 
-        if is_stereo:
+        if self.is_stereo:
             imgdirs = [os.path.join(basedir, 'images', 'left'), os.path.join(basedir, 'images', 'right')]
         else:
             imgdirs = [os.path.join(basedir, 'images')]
@@ -539,7 +540,7 @@ class LLFFDataset():
                 if not os.path.exists(scaled_imgdir):
                     os.makedirs(scaled_imgdir)
 
-                if is_stereo:
+                if self.is_stereo:
                     left_scaled_imgdir = os.path.join(basedir, name, 'left')
                     right_scaled_imgdir = os.path.join(basedir, name, 'right')
                     if not os.path.exists(left_scaled_imgdir):
