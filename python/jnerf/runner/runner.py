@@ -149,7 +149,7 @@ class Runner():
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
         videowriter = cv2.VideoWriter(save_path, fourcc, fps, (int(W), int(H)))
 
-        cam_path = camera_path.path_driving(self.root_dir)
+        cam_path = camera_path.path_driving(os.path.join(self.root_dir, "recentered_poses.npy"))
 
         #cam_path = camera_path.path_spherical()
         with jt.no_grad():
