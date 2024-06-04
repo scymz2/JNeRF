@@ -47,7 +47,7 @@ dataset = dict(
         factor=8,
         llffhold=8,
         aabb_scale=64,
-        use_depth=True,
+        use_depth=False,
         depth_rays_prop=0.5,
     ),
     val=dict(
@@ -60,7 +60,7 @@ dataset = dict(
         factor=8,
         llffhold=8,
         aabb_scale=64,
-        use_depth=True,
+        use_depth=False,
         depth_rays_prop=0.5,
     ),
     test=dict(
@@ -73,7 +73,7 @@ dataset = dict(
         factor=8,
         llffhold=8,
         aabb_scale=64,
-        use_depth=True,
+        use_depth=False,
         depth_rays_prop=0.5,
     ),
 )
@@ -82,7 +82,7 @@ exp_name = "RSRD-1"
 log_dir = "./logs"
 tot_train_steps = 40000
 depth_lambda = 0.1
-use_depth=True
+use_depth=False
 render_type = 'driving'
 depth_rays_prop=0.5
 # Background color, value range from 0 to 1
