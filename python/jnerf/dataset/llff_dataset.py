@@ -29,7 +29,7 @@ from colmapUtils.read_write_dense import *
 
 @DATASETS.register_module()
 class LLFFDataset():
-    def __init__(self, root_dir, batch_size, is_stereo, mode='train', factor=4, llffhold=0, recenter=True, bd_factor=.75, spherify=False, correct_pose=[1,-1,-1], aabb_scale=None, scale=None, offset=None, img_alpha=True,to_jt=True, have_img=True, preload_shuffle=True, use_depth=False, depth_rays_prop=0.5):
+    def __init__(self, root_dir, batch_size, is_stereo=False, mode='train', factor=4, llffhold=0, recenter=True, bd_factor=.75, spherify=False, correct_pose=[1,-1,-1], aabb_scale=None, scale=None, offset=None, img_alpha=True,to_jt=True, have_img=True, preload_shuffle=True, use_depth=False, depth_rays_prop=0.5):
         self.root_dir = root_dir
         self.batch_size = batch_size
         self.preload_shuffle = preload_shuffle
@@ -648,7 +648,7 @@ class LLFFDataset():
             rays_o: rays origin
             rays_d: rays direction
             rgb_target: target rgb
-            depth_target: target depth (if use_depth=True)
+            depth_target: target depth (if use_depth==True)
         """
 
         # Calculate the number of rays for depth and RGB based on the proportion
