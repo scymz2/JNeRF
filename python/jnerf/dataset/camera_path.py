@@ -39,4 +39,4 @@ def path_driving(poses_path, insert_frames=28):
         for j in range(insert_frames):
             pose = ori_poses[i] * (1-j/insert_frames) + ori_poses[i+1] * (j/insert_frames)
             poses.append(pose)
-    return poses
+    return poses.tolist()
