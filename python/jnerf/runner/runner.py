@@ -45,6 +45,7 @@ class Runner():
         self.use_depth          = self.cfg.use_depth
         self.depth_rays_prop    = self.cfg.depth_rays_prop
         self.depth_lambda       = self.cfg.depth_lambda
+        self.root_dir            = self.cfg.dataset_dir
         if not os.path.exists(self.save_path):
             os.makedirs(self.save_path)
         if self.cfg.ckpt_path and self.cfg.ckpt_path is not None:
@@ -147,7 +148,10 @@ class Runner():
         W, H = self.image_resolutions
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
         videowriter = cv2.VideoWriter(save_path, fourcc, fps, (int(W), int(H)))
-        cam_path = camera_path.path_spherical()
+
+        cam_path = camera_path.path_driving(self.root_dir)
+
+        #cam_path = camera_path.path_spherical()
         with jt.no_grad():
             for pose in tqdm(cam_path):
                 img = self.render_img_with_pose(pose)
