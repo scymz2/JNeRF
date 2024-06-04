@@ -78,11 +78,12 @@ dataset = dict(
     ),
 )
 
-exp_name = "RSRD-depth"
+exp_name = "RSRD-1"
 log_dir = "./logs"
 tot_train_steps = 40000
 depth_lambda = 0.1
 use_depth=True
+render_type = 'driving'
 depth_rays_prop=0.5
 # Background color, value range from 0 to 1
 background_color = [0, 0, 0]
