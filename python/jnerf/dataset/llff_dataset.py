@@ -371,7 +371,9 @@ class LLFFDataset():
 
         poses = np.linalg.inv(c2w) @ poses
         poses_[:, :3, :4] = poses[:, :3, :4]
-        poses = poses_
+        poses = poses_ 
+        np.save(os.path.join(self.root_dir, 'recentered_poses.npy'), poses)
+        print('Recentered poses saved!')
         return poses
 
     def poses_avg(self, poses):
@@ -387,9 +389,11 @@ class LLFFDataset():
     
     def load_llff(self, factor=4, is_stereo=False):
         basedir = self.root_dir
-        poses_arr = np.load(os.path.join(self.root_dir, 'poses_bounds.npy'))
-        poses = poses_arr[:, :-2].reshape([-1, 3, 5]).transpose([1, 2, 0])
-        bds = poses_arr[:, -2:].transpose([1, 0])
+        poses_arr = np.load(os.path.join(self.root_dir, 'poses_bounds.npy')) # N x 17
+        # remove the last two columns of poses_arr and reshape
+        poses = poses_arr[:, :-2].reshape([-1, 3, 5]).transpose([1, 2, 0]) # 3 x 5 x N
+        # Take the last two columns of poses_arr and transpose
+        bds = poses_arr[:, -2:].transpose([1, 0]) # 2 x N
         
         # Determine the image directories based on whether stereo mode is enabled
         if is_stereo:
