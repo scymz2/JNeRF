@@ -126,6 +126,7 @@ class LLFFDataset():
         self.H = hwf[0]
         self.W = hwf[1]
         f = hwf[2]
+        i_select = jt.array(i_select)
         for imgid in tqdm(i_select.tolist()):
             imgdir = imgdirs[imgid]
             img = read_image(imgdir)

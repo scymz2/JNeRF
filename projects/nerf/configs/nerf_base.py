@@ -42,12 +42,14 @@ dataset = dict(
     train=dict(
         type=dataset_type,
         root_dir=dataset_dir,
+        is_stereo=True,
         batch_size=512,
         mode='train',
     ),
     val=dict(
         type=dataset_type,
         root_dir=dataset_dir,
+        is_stereo=True,
         batch_size=512,
         mode='val',
         preload_shuffle=False,
@@ -55,6 +57,7 @@ dataset = dict(
     test=dict(
         type=dataset_type,
         root_dir=dataset_dir,
+        is_stereo=True,
         batch_size=512,
         mode='test',
         preload_shuffle=False,
@@ -63,6 +66,7 @@ dataset = dict(
 
 exp_name = "lego"
 log_dir = "./logs"
+render_type = 'driving'
 tot_train_steps = 200000
 # Background color, value range from 0 to 1
 background_color = [0, 0, 0]
