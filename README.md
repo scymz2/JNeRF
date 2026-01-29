@@ -50,7 +50,8 @@ We use fox datasets and blender lego datasets for training demonstrations.
 We provided fox dataset (from [Instant-NGP](https://github.com/NVlabs/instant-ngp)) in this repository at `./data/fox`.
 
 #### Lego Dataset
-You can download the lego dataset in nerf_example_data.zip at https://drive.google.com/drive/folders/128yBriW1IG_3NJ5Rp7APSTZsJqdJdfc1. And move `lego` folder to `./data/lego`.
+You can download the lego dataset in nerf_example_data.zip at https://drive.google.com/drive/folders/128yBriW1IG_3NJ5Rp7APSTZsJqdJdfc1. And move `lego` folder to `./data/lego`.\
+At the same time, we also provide automatic downloading of lego dataset. You can directly run the commands related to lego dataset.
 
 #### Customized Datasets
 
@@ -140,6 +141,7 @@ JNeRF will support more valuable NeRF models in the future, if you are also inte
 - :heavy_plus_sign: NeRFactor
 - :heavy_plus_sign: StyleNeRF
 - :heavy_plus_sign: EG3D
+- :heavy_plus_sign: SN2eRF
 - :heavy_plus_sign: ...
 
 ## Contact Us
@@ -148,13 +150,9 @@ If you are interested in JNeRF or NeRF research and want to build the JNeRF comm
 
 Email: jittor@qq.com
 
-JNeRF QQ Group: 689063884
+QQ Group: 836860279
 
-<img src="docs/jnerf_qrcode.jpg" width="200"/>
-
-If you have any questions about Jittor, you can [file an issue](https://github.com/Jittor/jittor/issues), or join our Jittor QQ Group: 761222083
-
-<img src="docs/jittor_qrcode.jpg" width="200"/>
+<img src="https://github.com/Jittor/jittor/assets/62846124/8dd830bd-b31c-4e4f-9a78-5fd7a3409145" width="200"/>
 
 ## Acknowledgements
 
