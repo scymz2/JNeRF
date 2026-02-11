@@ -72,9 +72,10 @@ def run_colmap(basedir, is_stereo, match_type):
         'colmap', 'mapper',
             '--database_path', os.path.join(basedir, 'database.db'),
             '--image_path', os.path.join(basedir, 'images'),
-            '--output_path', os.path.join(basedir, 'sparse'), # --export_path changed to --output_path in colmap 3.6
+            '--output_path', os.path.join(basedir, 'sparse'),  # --export_path changed to --output_path in colmap 3.6
             '--Mapper.num_threads', '16',
-            '--Mapper.init_min_tri_angle', '4',
+            '--Mapper.init_min_tri_angle', '4.0',
+            '--Mapper.init_max_forward_motion', '1',  # 这里改成你想要的数值(字符串)
             '--Mapper.multiple_models', '0',
             '--Mapper.extract_colors', '0',
     ]
