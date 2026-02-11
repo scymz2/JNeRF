@@ -21,7 +21,7 @@ loss = dict(
 optim = dict(
     type='Adam',
     lr=1e-1,
-    eps=1e-15,
+    eps=adam_eps,
     betas=(0.9, 0.99),
 )
 ema = dict(
@@ -36,7 +36,7 @@ expdecay = dict(
     decay_end=None
 )
 dataset_type = 'LLFFDataset'
-dataset_dir = 'data/RSRD-1'
+dataset_dir = 'data/llff_datasets_superpoint_superglue/RSRD-10'
 dataset = dict(
     train=dict(
         type=dataset_type,
@@ -44,7 +44,7 @@ dataset = dict(
         batch_size=4096,
         is_stereo=True,
         mode='train',
-        factor=8,
+        factor=4,
         llffhold=8,
         aabb_scale=64,
         use_depth=False,
@@ -57,7 +57,7 @@ dataset = dict(
         is_stereo=True,
         mode='val',
         preload_shuffle=False,
-        factor=8,
+        factor=4,
         llffhold=8,
         aabb_scale=64,
         use_depth=False,
@@ -70,7 +70,7 @@ dataset = dict(
         is_stereo=True,
         mode='test',
         preload_shuffle=False,
-        factor=8,
+        factor=4,
         llffhold=8,
         aabb_scale=64,
         use_depth=False,
@@ -78,7 +78,7 @@ dataset = dict(
     ),
 )
 
-exp_name = "RSRD-1"
+exp_name = "RSRD-10-superpoint-superglue-ngp"
 log_dir = "./logs"
 tot_train_steps = 40000
 depth_lambda = 0.1
@@ -99,7 +99,9 @@ target_batch_size = 1 << 18
 # Set const_dt=False for faster convergence
 const_dt = False
 # Use fp16 for faster training
-fp16 = False
+fp16 = True
+# Adam epsilon: use 1e-4 for fp16 (to prevent underflow to 0), 1e-15 for fp32
+adam_eps = 1e-4 if fp16 else 1e-15
 # Load pre-trained model
 load_ckpt = False
 # path of checkpoint file, None for default path
