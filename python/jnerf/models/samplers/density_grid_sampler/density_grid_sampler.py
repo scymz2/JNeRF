@@ -1,5 +1,6 @@
 import os
 import jittor as jt
+import numpy as np
 from jittor import nn
 from .ema_grid_samples_nerf import ema_grid_samples_nerf
 from .generate_grid_samples_nerf_nonuniform import generate_grid_samples_nerf_nonuniform
@@ -9,7 +10,6 @@ from .mark_untrained_density_grid import mark_untrained_density_grid
 from .compacted_coord import CompactedCoord
 from .ray_sampler import RaySampler
 from .calc_rgb import CalcRgb
-from .calc_depth import CalcDepth
 from jnerf.utils.config import get_cfg
 from jnerf.utils.registry import SAMPLERS
 from jnerf.ops.code_ops.global_vars import global_headers, proj_options
@@ -131,7 +131,6 @@ class DensityGridSampler(nn.Module):
         self.compacted_coords = CompactedCoord(
             self.density_grad_host_header, self.aabb_range, self.n_rays_per_batch, self.MAX_STEP, self.using_fp16, self.target_batch_size)
         self.calc_rgb = CalcRgb(self.density_grad_host_header, self.aabb_range, self.n_rays_per_batch, self.MAX_STEP, self.padded_output_width, self.background_color, using_fp16=self.using_fp16)
-        self.calc_depth = CalcDepth(self.density_grad_host_header, self.aabb_range, self.n_rays_per_batch, self.MAX_STEP, self.padded_output_width, using_fp16=self.using_fp16)
         self.measured_batch_size=jt.zeros([1],'int32')##rays batch sum
 
     def sample(self, img_ids, rays_o, rays_d, rgb_target=None, is_training=False):
@@ -210,32 +209,86 @@ class DensityGridSampler(nn.Module):
                 self._rays_numsteps_compacted,
                 background_color
             )
-        
-    def rays2depth(self, network_outputs, inference=False):
+
+    def rays2depth(self, network_outputs, rays_o):
+        """Vectorized expected-depth computation.
+        z_hat = sum_i w_i * d_i,  w_i = alpha_i * prod_{j<i}(1 - alpha_j)
+        """
         if self.using_fp16:
             with jt.flag_scope(auto_mixed_precision_level=5):
-                return self.rays2depth_(network_outputs, inference)
+                return self._rays2depth_impl(network_outputs, rays_o)
         else:
-            return self.rays2depth_(network_outputs, inference)
-        
-    def rays2depth_(self, network_outputs, inference=False):
-        assert network_outputs.shape[0]==self._coords.shape[0]
-        if inference:
-            depth = self.calc_depth.inference(
-                network_outputs, 
-                self._coords, 
-                self._rays_numsteps,
-                self.density_grid_mean)
-            return depth
-        else:
-            return self.calc_depth(
-                network_outputs,
-                self._coords,
-                self._rays_numsteps,
-                self.density_grid_mean,
-                self._rays_numsteps_compacted
-            )
+            return self._rays2depth_impl(network_outputs, rays_o)
 
+    def _rays2depth_impl(self, network_outputs, rays_o):
+        assert network_outputs.shape[0] == self._coords.shape[0]
+        rays_numsteps_compacted = self._rays_numsteps_compacted
+        coords = self._coords
+
+        min_step = np.sqrt(3.0) / self.MAX_STEP
+        max_step = min_step * (1 << (self.NERF_CASCADES - 1))
+
+        n_rays = int(rays_numsteps_compacted.shape[0])
+        n_samples = int(coords.shape[0])
+
+        if n_samples == 0:
+            return jt.zeros([n_rays], dtype='float32')
+
+        # Read per-ray (numsteps, base) into numpy for safe indexing
+        numsteps_np = rays_numsteps_compacted[:, 0].int32().numpy()
+        bases_np    = rays_numsteps_compacted[:, 1].int32().numpy()
+
+        # Build ray_idx array: sample i belongs to ray ray_idx[i]
+        ray_idx_np = np.zeros(n_samples, dtype=np.int32)
+        for r in range(n_rays):
+            ns = int(numsteps_np[r])
+            b  = int(bases_np[r])
+            if ns > 0 and b + ns <= n_samples:
+                ray_idx_np[b:b+ns] = r
+        ray_idx = jt.array(ray_idx_np)
+
+        # --- per-sample quantities (vectorized) ---
+        dt = coords[:, 3] * (max_step - min_step) + min_step
+        sigma = jt.exp(network_outputs[:, 3])
+        alpha = 1.0 - jt.exp(-sigma * dt)  # (n_samples,)
+
+        # Per-sample distance to its ray origin
+        pos = coords[:, :3]                        # (n_samples, 3)
+        ro  = rays_o[ray_idx]                      # (n_samples, 3)
+        dist = jt.sqrt(jt.sum((pos - ro) ** 2, dim=1) + 1e-9)  # (n_samples,)
+
+        # Compute transmittance via per-ray exclusive cumulative product of (1 - alpha)
+        log_one_minus_alpha = jt.log(jt.clamp(1.0 - alpha, min_v=1e-10))
+
+        # Global cumsum, then subtract per-ray start to get within-ray cumsum
+        cumsum_all = jt.cumsum(log_one_minus_alpha, dim=0)  # (n_samples,)
+
+        # For each ray, get cumsum value just before its first sample (exclusive prefix)
+        ray_start_cumsum_np = np.zeros(n_rays, dtype=np.float32)
+        cumsum_np = cumsum_all.numpy()
+        for r in range(n_rays):
+            b = int(bases_np[r])
+            ns = int(numsteps_np[r])
+            if ns > 0 and b > 0 and b - 1 < n_samples:
+                ray_start_cumsum_np[r] = cumsum_np[b - 1]
+        ray_start_cumsum = jt.array(ray_start_cumsum_np)
+
+        # Per-sample exclusive within-ray cumsum
+        per_sample_start = ray_start_cumsum[ray_idx]  # (n_samples,)
+        inclusive_cumsum = cumsum_all - per_sample_start
+        # exclusive = inclusive - current element
+        exclusive_cumsum = inclusive_cumsum - log_one_minus_alpha
+        transmittance = jt.exp(exclusive_cumsum)  # T_i = prod_{j<i}(1-alpha_j)
+
+        weight = alpha * transmittance             # (n_samples,)
+        weighted_depth = weight * dist             # (n_samples,)
+
+        # Scatter-add weighted_depth per ray
+        depth_out = jt.zeros([n_rays], dtype='float32')
+        depth_out = jt.scatter(depth_out, 0, ray_idx, weighted_depth, reduce='add')
+
+        return depth_out
+        
     def enlarge(self, x: jt.Var, size: int):
         if x.shape[0] < size:
             y = jt.empty([size], x.dtype)

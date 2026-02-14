@@ -31,7 +31,6 @@ class Runner():
         self.model              = build_from_cfg(self.cfg.model, NETWORKS)
         self.cfg.model_obj      = self.model
         self.sampler            = build_from_cfg(self.cfg.sampler, SAMPLERS)
-        self.sampler_depth      = build_from_cfg(self.cfg.sampler, SAMPLERS)
         self.cfg.sampler_obj    = self.sampler
         self.optimizer          = build_from_cfg(self.cfg.optim, OPTIMS, params=self.model.parameters())
         self.optimizer          = build_from_cfg(self.cfg.expdecay, OPTIMS, nested_optimizer=self.optimizer)
@@ -42,9 +41,8 @@ class Runner():
         self.n_rays_per_batch   = self.cfg.n_rays_per_batch
         self.using_fp16         = self.cfg.fp16
         self.save_path          = os.path.join(self.cfg.log_dir, self.exp_name)
-        self.use_depth          = self.cfg.use_depth
-        self.depth_rays_prop    = self.cfg.depth_rays_prop
-        self.depth_lambda       = self.cfg.depth_lambda
+        self.use_depth          = getattr(self.cfg, 'use_depth', False)
+        self.depth_lambda       = getattr(self.cfg, 'depth_lambda', 0.0)
         self.root_dir            = self.cfg.dataset_dir
         self.render_type        = self.cfg.render_type
         if not os.path.exists(self.save_path):
@@ -69,45 +67,42 @@ class Runner():
         for i in tqdm(range(self.start, self.tot_train_steps)):
             self.cfg.m_training_step = i
 
-            # print(f"self.use_depth: {self.use_depth}")
-            # print(f"self.depth_rays_prop: {self.depth_rays_prop}")
-
             if self.use_depth:
-                img_ids, rays_o, rays_d, rgb_target, depth_target, weights = next(self.dataset["train"])
+                img_ids, rays_o, rays_d, rgb_target, depth_target, depth_weights = next(self.dataset["train"])
             else:
                 img_ids, rays_o, rays_d, rgb_target = next(self.dataset["train"])
 
-            # adding random background color
-            # help to deal with transparent or half-transparent areas 
-            # increase the robustness of the model
-            training_background_color = jt.random([rgb_target.shape[0],3]).stop_grad()
-
-            # RGB * alpha + background_color * (1-alpha)
-            rgb_target = (rgb_target[..., :3] * rgb_target[..., 3:] + training_background_color * (1 - rgb_target[..., 3:])).detach()                
-
             if self.use_depth:
-                n_rgb_rays = int(len(img_ids) * self.depth_rays_prop)
+                n_rgb_rays = rgb_target.shape[0]
+
+                # ---- RGB branch (first half of the batch) ----
+                training_background_color = jt.random([n_rgb_rays, 3]).stop_grad()
+                rgb_target = (rgb_target[..., :3] * rgb_target[..., 3:] + training_background_color * (1 - rgb_target[..., 3:])).detach()
                 pos_rgb, dir_rgb = self.sampler.sample(img_ids[:n_rgb_rays], rays_o[:n_rgb_rays], rays_d[:n_rgb_rays], is_training=True)
-                pos_depth, dir_depth = self.sampler_depth.sample(img_ids[n_rgb_rays:], rays_o[n_rgb_rays:], rays_d[n_rgb_rays:], is_training=True)
-                pos = jt.concat([pos_rgb, pos_depth], dim=0)
-                dir = jt.concat([dir_rgb, dir_depth], dim=0)
-                network_outputs = self.model(pos, dir)
-                midpoint = network_outputs.shape[0] // 2
-                rgb = self.sampler.rays2rgb(network_outputs[:midpoint], training_background_color)
-                # print(f"rgb: {rgb.shape}")
-                # print(f"rgb_target: {rgb_target.shape}")
+                network_outputs_rgb = self.model(pos_rgb, dir_rgb)
+                rgb = self.sampler.rays2rgb(network_outputs_rgb, training_background_color)
                 rgb_loss = self.loss_func(rgb, rgb_target)
-                depth = self.sampler_depth.rays2depth(network_outputs[midpoint:])
-                with jt.no_grad():
-                    max_depth = depth_target.max()
-                    depth_loss = jt.mean((((depth - depth_target) / max_depth) ** 2) * weights)
+
+                # ---- Depth branch (second half, reuse same sampler) ----
+                pos_depth, dir_depth = self.sampler.sample(img_ids[n_rgb_rays:], rays_o[n_rgb_rays:], rays_d[n_rgb_rays:], is_training=True)
+                network_outputs_depth = self.model(pos_depth, dir_depth)
+                depth_pred = self.sampler.rays2depth(network_outputs_depth, rays_o[n_rgb_rays:])
+                max_depth = depth_target.max().stop_grad() + 1e-6
+                depth_loss = jt.mean((((depth_pred - depth_target) / max_depth) ** 2) * depth_weights)
+
                 loss = rgb_loss + self.depth_lambda * depth_loss
-            else:    
+            else:
+                # adding random background color
+                # help to deal with transparent or half-transparent areas
+                # increase the robustness of the model
+                training_background_color = jt.random([rgb_target.shape[0],3]).stop_grad()
+
+                # RGB * alpha + background_color * (1-alpha)
+                rgb_target = (rgb_target[..., :3] * rgb_target[..., 3:] + training_background_color * (1 - rgb_target[..., 3:])).detach()
+
                 pos, dir = self.sampler.sample(img_ids, rays_o, rays_d, is_training=True) # pos: [N, 3], dir: [N, 3]
                 network_outputs = self.model(pos, dir)
                 rgb = self.sampler.rays2rgb(network_outputs, training_background_color)
-                # print(f"rgb: {rgb.shape}")
-                # print(f"rgb_target: {rgb_target.shape}")
                 loss = self.loss_func(rgb, rgb_target)
 
             self.optimizer.step(loss)
